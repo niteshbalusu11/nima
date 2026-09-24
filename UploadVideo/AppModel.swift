@@ -28,7 +28,10 @@ final class AppModel: ObservableObject {
         do {
             let queue = try UploadQueue(); self.queue = queue
             camera = Camera(queue: queue, onError: { [weak self] message in
-                Task { @MainActor in self?.message = message }
+                Task { @MainActor in
+                    guard let self, self.session != nil || self.scanning else { return }
+                    self.message = message
+                }
             }, onCode: { [weak self] code in
                 Task { @MainActor in
                     guard let self, self.scanning else { return }
@@ -74,7 +77,7 @@ final class AppModel: ObservableObject {
     }
     func stopScanning() {
         scanning = false
-        if session == nil { camera?.suspend() }
+        if session == nil { camera?.suspend(); message = nil }
     }
     private func startCamera() async {
         let granted = await AVCaptureDevice.requestAccess(for: .video)

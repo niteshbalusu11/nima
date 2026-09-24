@@ -70,6 +70,9 @@ func TestMigrationsUpgradeRollbackAndNewerVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	if _, err = db.Exec("INSERT INTO accounts(id,created_at,role) VALUES('kept',0,'admin')"); err != nil {
+		t.Fatal(err)
+	}
 	steps := append(append([]string{}, migrations...), "ALTER TABLE accounts ADD COLUMN test_note TEXT NOT NULL DEFAULT '';", "INVALID SQL;")
 	if err = migrate(db, steps); err == nil || !strings.Contains(err.Error(), "migration 3") {
 		t.Fatalf("expected migration failure: %v", err)
@@ -86,6 +89,10 @@ func TestMigrationsUpgradeRollbackAndNewerVersion(t *testing.T) {
 	}
 	if databaseVersion(t, db) != 2 {
 		t.Fatal("upgrade not versioned")
+	}
+	var role, note string
+	if err = db.QueryRow("SELECT role,test_note FROM accounts WHERE id='kept'").Scan(&role, &note); err != nil || role != "admin" || note != "" {
+		t.Fatalf("upgrade did not preserve existing data: %q %q %v", role, note, err)
 	}
 	if err = migrate(db, steps); err != nil {
 		t.Fatalf("upgrade ran twice: %v", err)

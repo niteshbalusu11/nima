@@ -1,6 +1,6 @@
 # Admin invites and token sign-in
 
-Plan for the next phase. Keep the existing Go API, SQLite volume, SwiftUI app, and persistent sessions.
+Implemented September 24, 2026, using the existing Go API, SQLite volume, SwiftUI app, and persistent sessions.
 
 ## Permission model
 
@@ -44,3 +44,14 @@ The iOS role controls visibility only. The server enforces permission even when 
 Make small commits on `master`: server permissions; sign-in UI; admin invite UI; integration checks and operating instructions.
 
 SwiftUI provides a native [PasteButton](https://developer.apple.com/documentation/swiftui/pastebutton); use the existing AVFoundation QR scanner and native QR rendering without another service or SDK.
+
+## Verification
+
+- Go race tests cover CLI admin creation, member-only in-app invitations, anonymous/member denial, role override rejection, independent accounts, media ownership, per-admin rate limits, and concurrent single-use redemption.
+- Migration tests cover fresh and existing databases, repeated startup, upgrades retaining data, failed-batch rollback, and refusing a newer database. The deployed SQLite backup reports version 1 and passes its integrity check.
+- The full local RustFS/Swift integration suite still retrieves video and a photo before Stop; audio, dropped frames, queue reload, and Photos MP4 export pass.
+- Debug Simulator and Release iPhone builds compile. The simulator verified prefixed admin paste, raw member paste, invalid tokens, denied camera access, scanner dismissal, admin-only Profile navigation, QR generation/copy, and offline sign-in persistence. Decoding the displayed QR reproduces the copied token. An offline New invite request preserves the current QR.
+- GitHub Actions deployed the server. HTTPS checks verified CLI admin enrollment, member issuance, privilege rejection, single use, and persistence of existing sessions and uploaded media across deployment.
+- Still requires two physical iPhones: optical QR scanning from one screen to another and a real capture/upload regression check. Simulator checks do not validate camera hardware.
+
+An unused bootstrap admin invitation was created through the Fly CLI and downloaded privately to `server/data/fly/admin-bootstrap-20260924.png` (with a matching `.txt`). It is single-use and expires 24 hours after creation. It was not used for smoke tests. Generate another through the CLI if it expires; existing signed-in admins keep access.
