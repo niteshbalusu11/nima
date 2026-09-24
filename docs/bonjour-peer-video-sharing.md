@@ -17,9 +17,9 @@ This proposal uses **Apple peer-to-peer Wi-Fi with Bonjour and Network.framework
 
 ## Setup ahead of time
 
-1. **Create device identity.** Each installation generates a unique device ID and a TLS identity (private key and certificate). Keep the private key in that phone's Keychain. Register the device's public identity with the existing authenticated Go API. A replacement phone gets a new device identity.
-2. **Invite.** The sender creates a single-use, expiring recipient invitation with the API and shares its link/code through any channel. The invitation identifies the sender device and the intended permission: receive and save video from this sender. It contains no Wi-Fi password, IP address, or static Bonjour address.
-3. **Accept.** An enrolled recipient opens the invitation and explicitly enables automatic receiving from that sender. The server records the approval and returns each device's authenticated public identity to the other. The sender marks that recipient as selected for automatic local delivery. An invitation alone does not authorize delivery until the recipient accepts.
+1. **Create device identity.** Each installation generates a unique device ID, a TLS identity (private key and certificate), and a separate grant-signing key. Keep private keys in that phone's Keychain. Register the public identities with the existing authenticated Go API. A replacement phone gets new device identities.
+2. **Invite.** The sender creates a single-use, expiring recipient invitation with the API and shares its link/code through any channel. The invitation identifies the sender device and the intended permissions: receive/save video and, if selected, relay it to the sender's cloud capture. It contains no Wi-Fi password, IP address, or static Bonjour address.
+3. **Accept.** An enrolled recipient opens the invitation and explicitly enables automatic receiving from that sender, including whether to relay saved video when online. The server records the approval and returns each device's authenticated public identity to the other. The sender marks that recipient as selected for automatic local delivery. An invitation alone does not authorize delivery until the recipient accepts.
 4. **Cache locally.** Both apps store the approved device IDs and public-key fingerprints so later nearby connections can be authenticated offline. The UI lets either side disable a relationship; the app syncs additions/revocations when internet is available.
 
 The invitation exchange relies on the server's existing authenticated sessions to bind public keys to enrolled devices. Do not treat a user-provided nickname, Bonjour name, or TXT record as proof of identity. If invitations are transported outside the app, the server still validates single use, expiry, sender, recipient acceptance, and revocation.
@@ -42,10 +42,22 @@ Implementation uses the existing `NWBrowser`/`NWListener`/`NWConnection` APIs av
 - Save received media in the app's protected storage as fragments plus a manifest so the completed prefix remains recoverable after a disconnect. Provide a simple way to view/export a received capture. Adding a finished video to Photos is optional and requires its own permission flow.
 - Respect the app's current 256 MiB local media cap and disk-space floor. Define retention and cleanup before promising long offline backfill or unlimited recipients. Show per-recipient states such as connected, receiving, incomplete, and unavailable; never show “saved” before the receiver acknowledges durable storage.
 
+## Receiver-assisted cloud upload
+
+The receiving phone should also be able to upload the fragments it saved into the sender's existing cloud capture. Keep the bucket and S3 credentials on the Go server. A presigned PUT URL is a short-lived bearer authorization for one object, not a true single-use credential; sending one at recording time would also fail if the receiver remains offline past its expiry. The app sends a **signed relay grant**, not a bucket secret or an S3 URL.
+
+1. **Create a grant offline.** Give each installation a separate device signing key whose public half is registered with the Go API. At recording start, the sender signs a canonical grant containing the source account/device ID, capture ID, approved recipient device ID, upload-only scope, random nonce, expiration, and a bounded size allowance. If multiple peers are selected, create a grant for each one. The destination is a server-managed destination ID (initially the existing private Tigris bucket), not an arbitrary URL supplied by a peer.
+2. **Bind each fragment.** Alongside each fragment, send sender-signed metadata covering the capture ID, sequence, kind, length, SHA-256 digest, and timing. This prevents a receiver from adding or changing media under the sender's capture using its relay permission. The receiver stores the grant and signed metadata with the fragment bytes.
+3. **Redeem when online.** The receiver authenticates to the Go API with its *own* enrolled session and submits the grant. The API checks the sender signature against the registered signing key, current account/device status, recipient identity and approval, expiration, nonce, destination policy, and size limit. It records one relay authorization for that capture and recipient. Retrying a lost response returns that same authorization; it cannot create a second grant.
+4. **Upload exact objects.** For each signed fragment, the receiver calls a relay-specific reserve endpoint. The API validates the sender's fragment signature and uses the existing immutable `(capture ID, sequence)` reservation, quota, content length, digest, conditional `If-None-Match: *` PUT, and post-upload SHA-256 verification. It returns a fresh, two-minute presigned PUT URL for that object only. The receiver uploads the bytes and acknowledges them through the API. If the sender has already uploaded identical bytes, the reserve call reports the object complete; conflicting bytes fail.
+5. **Report independent outcomes.** Local receipt, sender cloud upload, and receiver relay upload are separate states. A receiving phone may relay immediately if it has internet, or later from its durable local copy. Do not claim cloud backup until the API has verified the stored object. Retain the grant and fragments until relay succeeds or the retention/expiry policy says otherwise.
+
+The existing cloud path remains the default. Relay improves resilience if the sender loses connectivity or is interrupted; it does not require the source phone to have internet while recording. A grant that expires before the receiver reconnects cannot be redeemed, so the UI must report the local copy separately from cloud status. Revocation is enforced when the receiver contacts the API, including for grants created while the sender was offline.
+
 ## Security and privacy
 
 - Use authenticated TLS for every local media connection, with peer identities checked against the preapproved list. Do not use a shared certificate embedded in every app installation or disable certificate validation.
-- Store private keys only on their own devices. Send only public keys/certificates through the invitation service. Rotate/re-enroll after a device replacement; revocation updates the server and cached allowlists when online.
+- Store private keys only on their own devices. Send only public keys/certificates through the invitation service. Use a separate signing key for relay grants and fragment metadata. Rotate/re-enroll after a device replacement; revocation updates the server and cached allowlists when online.
 - Bonjour advertisements disclose only the app service, not a permanent user/device ID, email, or invite token. Untrusted nearby apps may see the service and attempt connections, so reject them during authentication and bound connection attempts.
 - Link encryption protects bytes in transit. This proposal does not claim end-to-end encryption of the cloud copy or new encryption at rest for received files; those are separate decisions from the current pilot.
 
@@ -64,6 +76,7 @@ Implementation uses the existing `NWBrowser`/`NWListener`/`NWConnection` APIs av
 4. With three phones, the sender transfers the same recording to two approved receivers and reports each receiver's own acknowledgement/status.
 5. Interrupt the link and the sender. Already acknowledged fragments remain recoverable on the receiver; the sender reports any missing portion accurately.
 6. Test Local Network denial, receiving app unavailable, low storage, and a receiver entering range mid-recording on physical iPhones.
+7. With the sender offline, a receiver saves the signed grant and fragments, later redeems the grant with its own session, and uploads the same capture into the private bucket. Identical sender/receiver uploads deduplicate; modified or unsigned fragments, wrong recipients, expired grants, and revoked devices fail. A repeated redemption after a lost response is safe.
 
 ## Sources
 
@@ -72,3 +85,6 @@ Implementation uses the existing `NWBrowser`/`NWListener`/`NWConnection` APIs av
 - [Apple: Building a custom peer-to-peer protocol](https://developer.apple.com/documentation/network/building-a-custom-peer-to-peer-protocol) — iOS Bonjour and TLS sample.
 - [Apple: Moving from Multipeer Connectivity to Network framework](https://developer.apple.com/documentation/technotes/tn3213-moving-from-multipeer-connectivity-to-network-framework) — identity, TLS, peer-to-peer configuration, and Bonjour privacy.
 - [Apple: Understanding local network privacy](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy) — Local Network permission and Bonjour service declaration.
+- [Apple: CryptoKit P-256 signatures](https://developer.apple.com/documentation/cryptokit/p256/signing/privatekey) — device-signed offline grants and fragment metadata.
+- [AWS: Presigned request FAQ](https://docs.aws.amazon.com/prescriptive-guidance/latest/presigned-url-best-practices/faq.html) — presigned requests are not intrinsically single-use.
+- [AWS: PutObject conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html) — `If-None-Match: *` rejects overwrite of an existing key.
