@@ -1,0 +1,3 @@
+API_BASE_URL = http:/$()/127.0.0.1:8080
+#include? "Local.xcconfig"
+INFOPLIST_FILE = UploadVideo/Configuration/Debug-Info.plist

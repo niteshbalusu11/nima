@@ -2,6 +2,7 @@
 
 ## Purpose
 
+- it has to be invite only app, so it can't be open to anyone.
 - upload-video is an iOS only app that uploads videos/photos as it's being taken to a secure cloud which is encrypted.
 - live upload is the important piece, not record fully and then upload.
 - videos are live encrypted as they are getting uploaded
@@ -9,6 +10,8 @@
 - the app should be stupidly simply to use. almost like the stock iOS camera app.
 - no too much text, UX should be simple and straightforward.
 - the app would be native, swift/swiftui/uikit.
+- Go server handles all the backend like user accounts and invite codes.
+- Tigris on Fly.io is the production object storage provider; RustFS is used locally.
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 

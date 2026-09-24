@@ -10,13 +10,27 @@
 		566267AA891D1842197B339A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA54C291C542BB61A2311C17 /* ContentView.swift */; };
 		6506EFC50074C363C58F7C7A /* UploadVideoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B22A580CC7BE5D5BD5643497 /* UploadVideoApp.swift */; };
 		88D1C469656CEB06BCA9A6CD /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 430C07E962E2702AE7F52144 /* Foundation.framework */; };
+		E3AE4BE37633FF5347B67FCF /* API.swift in Sources */ = {isa = PBXBuildFile; fileRef = 292D172A525A02145C45A0C6; };
+		50C8145861084B381571E354 /* UploadQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F8F0F7AC25D68994B1DE477; };
+		DB6596BF61AA7D2CBF8351B3 /* SegmentWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B4C49C397C08E10624B7D0A; };
+		055E100155B344B6ACF0B18C /* Camera.swift in Sources */ = {isa = PBXBuildFile; fileRef = F583598781191B3BA29561D2; };
+		6DCD2CA582FA5891CAE9FA7A /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09ECBBB9BA2E47316C817303; };
+		D63B6200560377DA67891AAA = {isa = PBXBuildFile; fileRef = D63B6200560377DA67891AAB; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		430C07E962E2702AE7F52144 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		430C07E962E2702AE7F52144 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		A27B83E9200FD08DD8B40B74 /* UploadVideo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = UploadVideo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B22A580CC7BE5D5BD5643497 /* UploadVideoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UploadVideoApp.swift; sourceTree = "<group>"; };
 		CA54C291C542BB61A2311C17 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		292D172A525A02145C45A0C6 /* API.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = API.swift; sourceTree = "<group>"; };
+		0F8F0F7AC25D68994B1DE477 /* UploadQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueue.swift; sourceTree = "<group>"; };
+		4B4C49C397C08E10624B7D0A /* SegmentWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentWriter.swift; sourceTree = "<group>"; };
+		F583598781191B3BA29561D2 /* Camera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera.swift; sourceTree = "<group>"; };
+		09ECBBB9BA2E47316C817303 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		1A03BD2FD107C453F3183E30 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = UploadVideo/Configuration/Debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		E020E3C67BD0C31227720BD8 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = UploadVideo/Configuration/Release.xcconfig; sourceTree = SOURCE_ROOT; };
+		D63B6200560377DA67891AAB = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -69,6 +83,12 @@
 			children = (
 				B22A580CC7BE5D5BD5643497 /* UploadVideoApp.swift */,
 				CA54C291C542BB61A2311C17 /* ContentView.swift */,
+				D63B6200560377DA67891AAB /* Assets.xcassets */,
+				09ECBBB9BA2E47316C817303 /* AppModel.swift */,
+				F583598781191B3BA29561D2 /* Camera.swift */,
+				4B4C49C397C08E10624B7D0A /* SegmentWriter.swift */,
+				0F8F0F7AC25D68994B1DE477 /* UploadQueue.swift */,
+				292D172A525A02145C45A0C6 /* API.swift */,
 			);
 			name = UploadVideo;
 			path = UploadVideo;
@@ -128,6 +148,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D63B6200560377DA67891AAA /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -140,6 +161,11 @@
 			files = (
 				6506EFC50074C363C58F7C7A /* UploadVideoApp.swift in Sources */,
 				566267AA891D1842197B339A /* ContentView.swift in Sources */,
+				6DCD2CA582FA5891CAE9FA7A /* AppModel.swift in Sources */,
+				055E100155B344B6ACF0B18C /* Camera.swift in Sources */,
+				DB6596BF61AA7D2CBF8351B3 /* SegmentWriter.swift in Sources */,
+				50C8145861084B381571E354 /* UploadQueue.swift in Sources */,
+				E3AE4BE37633FF5347B67FCF /* API.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -202,12 +228,14 @@
 		};
 		A80C46FD36DF73D2BDC773D7 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E020E3C67BD0C31227720BD8;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				MARKETING_VERSION = 0.1.0;
 				INFOPLIST_KEY_CFBundleDisplayName = "Upload Video";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Capture photos and videos to upload securely.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio with videos you capture.";
@@ -287,12 +315,14 @@
 		};
 		EED1B195CBF35E93274F48CA /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A03BD2FD107C453F3183E30;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				MARKETING_VERSION = 0.1.0;
 				INFOPLIST_KEY_CFBundleDisplayName = "Upload Video";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Capture photos and videos to upload securely.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio with videos you capture.";

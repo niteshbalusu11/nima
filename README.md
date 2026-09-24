@@ -1,15 +1,61 @@
 # Upload Video
 
-Native iPhone app built with SwiftUI. The project currently contains the app shell; camera capture, live encryption, and upload have not been implemented yet.
+Invite-only native iPhone camera. Scan an invite once, then shoot. Photos upload immediately; video uploads in roughly one-second fragments **while recording**. Optional profile: name, email, Signal username.
 
-## Open and run
+SwiftUI/AVFoundation → a small Go API with SQLite → private S3-compatible storage. RustFS locally; R2 in production. App-level encryption is deferred for this pilot. Release builds use HTTPS; local Debug builds permit HTTP.
 
-Open `UploadVideo.xcodeproj` in Xcode, choose the **UploadVideo** scheme and an iPhone simulator, then run. The deployment target is iOS 17.0.
+## Run locally
 
-To run on an iPhone, set a unique bundle identifier and your development team in the target's Signing & Capabilities settings. Camera and microphone access must be tested on a device; the simulator does not provide a real camera feed.
-
-## Build from the command line
+Requires Go 1.26.1+, Docker/OrbStack, and Xcode. Start Docker, then:
 
 ```sh
-xcodebuild -project UploadVideo.xcodeproj -scheme UploadVideo -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+./tools/start-local.sh
 ```
+
+This generates private local credentials in `server/.env`, starts RustFS, creates the private bucket, and runs the API on **http://127.0.0.1:8080**. RustFS console: **http://127.0.0.1:9001**. Console credentials are in `.env`; they never go into the app.
+
+In another terminal, issue an invite:
+
+```sh
+cd server
+./uploadvideo invite --out data/invite.png
+```
+
+Open `UploadVideo.xcodeproj` in Xcode. Run from Xcode with normal signing so Keychain works. The unsigned command-line build below is a compilation check. The simulator can show the UI; a physical iPhone is required for camera/QR testing.
+
+For an iPhone on the same Wi-Fi:
+
+1. In `server/.env`, set `LISTEN_ADDR=0.0.0.0:8080`, `STORAGE_BIND_IP=0.0.0.0`, and `S3_ENDPOINT=http://YOUR_MAC_LAN_IP:9000`. Restart `start-local.sh`. The signed storage URL **must be reachable by the phone**; localhost would point to the phone itself.
+2. Copy `UploadVideo/Configuration/Local.xcconfig.example` to `Local.xcconfig` in the same directory. Set `API_BASE_URL` to the Mac's LAN address, preserving the example's Xcode slash syntax.
+3. Set your signing team and unique bundle identifier in Xcode, run the Debug build, and scan the QR. Use a trusted local network for this HTTP development setup.
+
+The camera UI has Photo/Video, shutter/stop, a photo button during recording, a small cloud indicator, and an optional profile sheet. Microphone denial allows silent video. Profile fields are optional contact details, never login credentials.
+
+## Verify
+
+```sh
+# Backend authorization, recovery, and backup tests
+cd server
+go test -race ./...
+```
+
+With RustFS running and its private bucket initialized, from the repository root:
+
+```sh
+./tools/verify-local.sh
+```
+
+Requires `ffmpeg`/`ffprobe`. This uses the **app's actual Swift encoder, disk queue, and upload worker** to upload synthetic video/audio and a photo to RustFS, retrieve them before Stop, and decode the retrieved video. It also checks dropped-frame handling, persisted acknowledgments, account isolation, conditional PUTs, and recovery without an upload acknowledgment.
+
+```sh
+xcodebuild -project UploadVideo.xcodeproj -scheme UploadVideo \
+  -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+```
+
+## Before live use
+
+Local integration tests do not exercise a physical camera, device thermal behavior, cellular networking, or R2 itself. Follow [the device checklist](docs/device-checklist.md) before the pilot. Foreground recording only; locking/backgrounding stops capture. Pending uploads resume when the app opens. Completed fragments survive interruption; the current unfinished fragment may be lost on force-quit.
+
+The app retains both pending and uploaded local media, excluded from iCloud backup, up to 256 MiB with a 100 MiB disk-space floor. It stops recording near that limit. There is no automatic deletion or cleanup UI yet. A long pilot needs retrieval and deliberate cleanup; do not delete the app with pending media. Account storage reservations are capped at 5 GiB server-side.
+
+For R2, deployment, invitations, revocation, backup and retrieval, see [server/README.md](server/README.md). The original decisions remain in [the implementation plan](docs/implementation-plan.md).

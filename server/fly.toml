@@ -1,0 +1,49 @@
+app = "upload-video-api"
+primary_region = "ewr"
+kill_signal = "SIGTERM"
+kill_timeout = "15s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  APP_ENV = "production"
+  LISTEN_ADDR = "0.0.0.0:8080"
+  DATABASE_PATH = "/data/app.sqlite"
+  S3_REGION = "auto"
+  S3_PATH_STYLE = "false"
+
+# SQLite has one writer and one volume. Deploy with --ha=false; do not scale out.
+[deploy]
+  strategy = "immediate"
+
+[mounts]
+  source = "upload_video_data"
+  destination = "/data"
+  initial_size = "1gb"
+  snapshot_retention = 14
+  scheduled_snapshots = true
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 100
+    hard_limit = 150
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "15s"
+    timeout = "3s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"

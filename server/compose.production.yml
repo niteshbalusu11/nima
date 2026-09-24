@@ -1,0 +1,27 @@
+services:
+  api:
+    build: .
+    env_file: .env
+    environment:
+      APP_ENV: production
+      LISTEN_ADDR: 0.0.0.0:8080
+      DATABASE_PATH: /data/app.sqlite
+    volumes:
+      - api-data:/data
+    restart: unless-stopped
+  https:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+volumes:
+  api-data:
+  caddy-data:
+  caddy-config:
