@@ -129,20 +129,15 @@ export default function Dashboard() {
       if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return
       if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]')) return
-      if (!captures.some(capture => capture.kind === 'video')) return
+      if (!captures.length) return
       event.preventDefault()
       setSelectedId(current => {
         const direction = event.key === 'ArrowUp' ? -1 : 1
         let index = captures.findIndex(capture => capture.id === current)
         if (index < 0) index = direction < 0 ? 0 : captures.length - 1
-        for (let offset = 1; offset <= captures.length; offset++) {
-          const next = captures[(index + direction * offset + captures.length) % captures.length]
-          if (next.kind === 'video') {
-            keyboardNavigation.current = next.id !== current
-            return next.id
-          }
-        }
-        return current
+        const next = captures[(index + direction + captures.length) % captures.length]
+        keyboardNavigation.current = next.id !== current
+        return next.id
       })
     }
     window.addEventListener('keydown', onKeyDown)
@@ -223,7 +218,7 @@ export default function Dashboard() {
                 onError={() => setPhotos(previous => { const next = { ...previous }; delete next[selected.id]; return next })} />
             : <div className="dash-empty"><span className="dash-empty-ring" /><p>Waiting for photo upload</p></div>)}
         </div>
-        {selected && <div className="dash-stage-meta"><span>CAPTURE ID&nbsp; {selected.id.slice(0, 8)}</span><span>{selected.kind === 'video' ? `${Math.max(0, selected.acknowledged_objects - 1)} video fragments uploaded` : 'Photo'}</span><span className="dash-shortcuts">↑ ↓ videos{selected.kind === 'video' ? ' · Space play/pause' : ''}</span></div>}
+        {selected && <div className="dash-stage-meta"><span>CAPTURE ID&nbsp; {selected.id.slice(0, 8)}</span><span>{selected.kind === 'video' ? `${Math.max(0, selected.acknowledged_objects - 1)} video fragments uploaded` : 'Photo'}</span><span className="dash-shortcuts">↑ ↓ captures{selected.kind === 'video' ? ' · Space play/pause' : ''}</span></div>}
       </section>
       <aside className="dash-feed" aria-label="Recent captures">
         <div className="dash-feed-head"><div><span className="dash-eyebrow">ACTIVITY</span><h2>Recent captures</h2></div><span>{captures.length}</span></div>
