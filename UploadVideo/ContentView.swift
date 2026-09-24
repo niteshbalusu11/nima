@@ -67,10 +67,29 @@ struct ContentView: View {
                     }.buttonStyle(.borderedProminent)
                 } else {
                     if !model.recording {
-                        HStack(spacing: 30) {
-                            Button("Photo") { videoMode = false }.foregroundStyle(videoMode ? .white : .yellow)
-                            Button("Video") { videoMode = true }.foregroundStyle(videoMode ? .yellow : .white)
-                        }.font(.subheadline.weight(.semibold)).padding(.top, 12)
+                        HStack(spacing: 4) {
+                            Button { videoMode = false } label: {
+                                Text("Photo")
+                                    .frame(minWidth: 108, minHeight: 50)
+                                    .foregroundStyle(videoMode ? .white : .black)
+                                    .background(videoMode ? .clear : .yellow, in: Capsule())
+                                    .contentShape(Capsule())
+                            }
+                            .accessibilityAddTraits(videoMode ? [] : .isSelected)
+                            Button { videoMode = true } label: {
+                                Text("Video")
+                                    .frame(minWidth: 108, minHeight: 50)
+                                    .foregroundStyle(videoMode ? .black : .white)
+                                    .background(videoMode ? .yellow : .clear, in: Capsule())
+                                    .contentShape(Capsule())
+                            }
+                            .accessibilityAddTraits(videoMode ? .isSelected : [])
+                        }
+                        .font(.headline)
+                        .buttonStyle(.plain)
+                        .padding(4)
+                        .background(.black.opacity(0.8), in: Capsule())
+                        .padding(.top, 12)
                     }
                     ZStack {
                         Button { Task { await model.shutter(video: videoMode) } } label: {
