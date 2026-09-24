@@ -6,6 +6,7 @@ Verification on September 24, 2026:
 - RustFS: signed upload/download, denied public access, conditional PUT rejects overwrite, recovery of an unacknowledged object.
 - Real app Swift encoder/queue/uploader on macOS: 480×640 H.264 + AAC, deliberate raw-frame gap, concurrent JPEG, remote download **before Stop**, clean FFmpeg decoding, durable queue acknowledgments.
 - Signed simulator: enrollment through the local API, Keychain session survives relaunch, optional profile edits persist.
+- Sessions: no automatic expiry or expiry field in the app/API/database. Enrollment, saved-session restoration, account isolation, and the live-media flow pass the updated tests.
 - Builds: Debug simulator and unsigned Release for physical iOS both compile. Release has no HTTP transport exception.
 - Queue: reconstruction after offline capture, account isolation, initialization-before-media ordering, saved originals retained.
 - Photos: synthetic JPEG and completed H.264/AAC video imported through the app's actual PhotoKit saver in the simulator. Denied add-only access leaves the queue intact. MP4 export preserves portrait dimensions, audio, and seven-second duration despite a dropped-frame gap; queue tests reject missing fragments and another account's capture.

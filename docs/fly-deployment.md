@@ -20,6 +20,8 @@ September 24, 2026. Production hosting is Fly.io with Tigris; this supersedes th
 
 Deployed and verified on September 24, 2026.
 
+This is a pre-release test deployment; the app is not live yet. Sessions now stay signed in without automatic expiry. The expiry field was removed from the app model, enrollment response, and session schema. The old column was dropped directly through the CLI in both local and Fly test databases; the update succeeded without a reset or application compatibility code. New enrollment and authentication, saved test sessions/media, both iOS builds, and the live-upload integration tests passed after this change.
+
 | Resource | Value |
 | --- | --- |
 | API | `https://upload-video-api.fly.dev` |

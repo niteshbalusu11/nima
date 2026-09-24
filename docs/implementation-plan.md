@@ -14,7 +14,7 @@ September 24, 2026. The implementation now includes the native camera, Go/SQLite
 | --- | --- |
 | Backend | One Go service, SQLite on durable local disk, HTTPS. |
 | Storage | Private R2 bucket; direct iPhone uploads through short-lived signed URLs. |
-| Authentication | Physical single-use QR invite; random account ID; revocable session stored in Keychain. No email/password login. |
+| Authentication | Physical single-use QR invite; random account ID; session stored in Keychain with no automatic expiry. No email/password login. |
 | Video | Roughly 480p, 15 fps, H.264 around 500 kbps; optional mono AAC around 32 kbps. Approximately one-second fMP4 segments. |
 | Frame loss | Dropping raw frames is acceptable when capture/encoding cannot keep up. Preserve original timestamps and audio/video synchronization. |
 | Photos | JPEG captured and uploaded immediately through the same upload service. Included in today's release. |
@@ -40,7 +40,7 @@ Use five tables: `accounts`, `invites`, `sessions`, `captures`, and `objects`. A
 
 Add nullable `name`, `email`, and `signal_username` fields to `accounts`, with authenticated `GET /me` and `PATCH /me` for the caller's own profile. All fields are optional and clearable. Keep them out of R2 object names/metadata and operational logs. Email and Signal username are contact details only; no verification, messaging integration, or account-recovery flow today.
 
-Admin commands issue a QR invite, revoke access, and enroll a replacement device into an existing account. Consume each invite atomically while creating a session. Generate independent random invite/session secrets, store hashes server-side, and save the session in non-syncing iOS Keychain. Proposed pilot defaults: 24-hour invites and seven-day sessions, both revocable.
+Admin commands issue a QR invite, explicitly revoke access if needed, and enroll a replacement device into an existing account. Consume each invite atomically while creating a session. Generate independent random invite/session secrets, store hashes server-side, and save the session in non-syncing iOS Keychain. Pilot defaults: unused invites expire after 24 hours; sessions have no expiry field and never expire automatically.
 
 The API needs enrollment, session validation, idempotent capture creation, object reservation/upload authorization, upload acknowledgement, optional video finalization, and listing/download authorization. Reserve object references before issuing URLs so uploaded media remains discoverable if the phone disappears. Check active membership and ownership on every protected request. Rate-limit enrollment and bound upload size, batch size, and per-account usage.
 

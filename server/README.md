@@ -36,7 +36,9 @@ flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo revoke --account ACC
 
 Download an invite with `flyctl ssh sftp get /data/invite.png ./invite.png -a upload-video-api -u app`. If this network cannot establish Fly's SSH tunnel, use `tools/fly-download.py` instead. Hand out QR codes individually; each is a secret, expires after 24 hours, and is single-use. An optional `--ttl` changes its lifetime.
 
-Sessions last seven days. `--account` binds a fresh invite to an existing active account, useful for a replacement phone or retrieval helper. A lost device's session can be revoked separately with `revoke --session-hash HASH`. Account revocation blocks all its sessions; previously issued storage URLs expire within two minutes.
+Sessions do not expire automatically. A phone stays signed in using its saved Keychain token. Enrollment returns only `token` and `account_id`; sessions have no expiry field. Unused invites still expire after 24 hours.
+
+`--account` binds a fresh invite to an existing active account, useful for a replacement phone or retrieval helper. The admin-only `revoke` command remains available if explicitly needed; nothing invokes it automatically. Account revocation blocks all its sessions; previously issued storage URLs expire within two minutes.
 
 ## Retrieve media
 
@@ -71,6 +73,6 @@ Protect backups as user data. They contain account/media metadata, not the media
 - Authenticated: `GET/PATCH /me`, `PUT /captures/{id}`, `POST /captures/{id}/objects/reserve`, `POST /captures/{id}/objects/ack`, `GET /captures`, `GET /captures/{id}`.
 - Optional: `POST /captures/{id}/finish`; retrieval does not depend on it.
 
-Protected requests check session expiry/revocation, active membership and ownership. Enrollment is limited to ten attempts per peer IP per minute; clients behind the same proxy may share that allowance. Objects are capped at 12 MiB and account reservations at 5 GiB. Uploaded data is immutable through conditional PUTs and verified by SHA-256.
+Protected requests check the session token, explicit revocation, active membership and ownership. Enrollment is limited to ten attempts per peer IP per minute; clients behind the same proxy may share that allowance. Objects are capped at 12 MiB and account reservations at 5 GiB. Uploaded data is immutable through conditional PUTs and verified by SHA-256.
 
 For deployment decisions, actual resources and verification results, see [the deployment note](../docs/fly-deployment.md). Official references: [Fly configuration](https://docs.fly.io/reference/configuration/), [volumes](https://docs.fly.io/volumes/overview/), [Tigris](https://docs.fly.io/tigris/).

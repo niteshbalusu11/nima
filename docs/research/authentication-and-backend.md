@@ -1,5 +1,7 @@
 # Invite-only authentication and backend research
 
+Implementation update: the chosen flow now keeps sessions signed in without automatic expiry. The expiry discussion below records the earlier proposal; see [the current implementation plan](../implementation-plan.md).
+
 Updated September 24, 2026. Research and proposed architecture; no backend has been provisioned or implemented. Primary sources are linked beside relevant claims. Current requirements: a server we control for account data, physical QR invitations, no email delivery, native iOS, and ongoing encrypted media uploads. Cloudflare R2 is the proposed media store.
 
 **Recommendation: one small API service, a database we operate, and private R2 storage.** For a small pilot, I would start with Go and SQLite on the same host, plus a small admin command for issuing/revoking invitations. This language/database choice is a recommendation, not a user-selected stack. Keep accounts minimal: random identifiers, membership status, sessions, and recording ownership. No name, email, phone number, or external identity provider is required.

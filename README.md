@@ -2,6 +2,8 @@
 
 Invite-only native iPhone camera. Scan an invite once, then shoot. Photos upload immediately; video uploads in roughly one-second fragments **while recording**. Optional profile: name, email, Signal username.
 
+The phone stays signed in; sessions have no automatic expiry. Unused invite QR codes expire after 24 hours and can only be redeemed once.
+
 SwiftUI/AVFoundation → a small Go API with SQLite → private S3-compatible storage. RustFS locally; Tigris on Fly.io in production. App-level encryption is deferred for this pilot. Release builds use HTTPS; local Debug builds permit HTTP.
 
 ## Deployed server
