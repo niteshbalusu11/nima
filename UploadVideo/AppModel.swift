@@ -39,8 +39,12 @@ final class AppModel: ObservableObject {
             let queue = try UploadQueue(); self.queue = queue
             camera = Camera(queue: queue, onError: { [weak self] message in
                 Task { @MainActor in
-                    guard let self, self.session != nil || self.scanning else { return }
+                    guard let self, self.active, self.session != nil || self.scanning else { return }
                     self.message = message
+                }
+            }, onReady: { [weak self] in
+                Task { @MainActor in
+                    if self?.message == "Camera interrupted" { self?.message = nil }
                 }
             }, onCode: { [weak self] code in
                 Task { @MainActor in

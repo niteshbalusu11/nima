@@ -25,6 +25,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private let codes = AVCaptureMetadataOutput()
     private let uploadQueue: UploadQueue
     private let onError: @Sendable (String) -> Void
+    private let onReady: @Sendable () -> Void
     private let onCode: @Sendable (String) -> Void
     private let onRecordingEnded: @Sendable () -> Void
     private let onPhotoCaptured: @Sendable () -> Void
@@ -43,25 +44,35 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private var photoAccounts: [Int64: (String, CaptureLocation?)] = [:]
     private var latestFrontFrame: CMSampleBuffer?
     private var latestCombinedFrame: CVPixelBuffer?
+    private var needsRecovery = false
     private let compositor = CameraCompositor()
     private var multiBackDevice: AVCaptureDevice?
     private var observations: [NSObjectProtocol] = []
     init(queue: UploadQueue, onError: @escaping @Sendable (String) -> Void,
+         onReady: @escaping @Sendable () -> Void,
          onCode: @escaping @Sendable (String) -> Void,
          onRecordingEnded: @escaping @Sendable () -> Void, onPhotoCaptured: @escaping @Sendable () -> Void) {
         let multi = AVCaptureMultiCamSession()
         multiSession = multi
         multiBackPreview = AVCaptureVideoPreviewLayer(sessionWithNoConnection: multi)
         multiFrontPreview = AVCaptureVideoPreviewLayer(sessionWithNoConnection: multi)
-        uploadQueue = queue; self.onError = onError; self.onCode = onCode; self.onRecordingEnded = onRecordingEnded
+        uploadQueue = queue; self.onError = onError; self.onReady = onReady; self.onCode = onCode; self.onRecordingEnded = onRecordingEnded
         self.onPhotoCaptured = onPhotoCaptured
         super.init()
         multiBackPreview.videoGravity = .resizeAspectFill
         multiFrontPreview.videoGravity = .resizeAspectFill
         for current in [session, multiSession] {
+            let observingMulti = current === multiSession
             for name in [AVCaptureSession.wasInterruptedNotification, AVCaptureSession.runtimeErrorNotification] {
                 observations.append(NotificationCenter.default.addObserver(forName: name, object: current, queue: nil) { [weak self] _ in
-                    self?.stopRecording(); self?.onError("Camera interrupted")
+                    self?.work.async { [weak self] in
+                        guard let self, observingMulti == (self.mode == .both) else { return }
+                        let activeSession = observingMulti ? self.multiSession : self.session
+                        if name == AVCaptureSession.wasInterruptedNotification && !activeSession.isInterrupted { return }
+                        self.needsRecovery = true
+                        self.finishRecording()
+                        self.onError("Camera interrupted")
+                    }
                 })
             }
         }
@@ -134,8 +145,8 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
         video.setSampleBufferDelegate(self, queue: work)
         session.addOutput(video); session.addOutput(photos)
-        if let connection = video.connection(with: .video), connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
-        if let connection = photos.connection(with: .video), connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
+        if let connection = video.connection(with: .video), connection.isVideoOrientationSupported { connection.videoOrientation = .portrait }
+        if let connection = photos.connection(with: .video), connection.isVideoOrientationSupported { connection.videoOrientation = .portrait }
         if session.canAddOutput(codes) {
             session.addOutput(codes)
             codes.setMetadataObjectsDelegate(self, queue: work)
@@ -167,7 +178,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         captureDevice = device; singleMode = target; photoDimensions = nil
         for connection in [video.connection(with: .video), photos.connection(with: .video)] {
             guard let connection else { continue }
-            if connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
+            if connection.isVideoOrientationSupported { connection.videoOrientation = .portrait }
             if connection.isVideoMirroringSupported {
                 connection.automaticallyAdjustsVideoMirroring = false
                 connection.isVideoMirrored = target == .front
@@ -211,8 +222,9 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
                 }
                 multiSession.addConnection(dataConnection)
                 multiSession.addConnection(previewConnection)
+                // Portrait orientation maps to each camera's native sensor angle.
                 for connection in [dataConnection, previewConnection] {
-                    if connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
+                    if connection.isVideoOrientationSupported { connection.videoOrientation = .portrait }
                     if mirrored && connection.isVideoMirroringSupported {
                         connection.automaticallyAdjustsVideoMirroring = false
                         connection.isVideoMirrored = true
@@ -425,10 +437,17 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
                   abs((CMSampleBufferGetPresentationTimeStamp(sampleBuffer) - CMSampleBufferGetPresentationTimeStamp(front)).seconds) < 0.5,
                   let combined = compositor.compose(back: sampleBuffer, front: front) else { return }
             latestCombinedFrame = CMSampleBufferGetImageBuffer(combined)
+            recoveredIfNeeded()
             appendForRecording(combined, isVideo: true)
             return
         }
+        if output === video { recoveredIfNeeded() }
         appendForRecording(sampleBuffer, isVideo: output === video)
+    }
+    private func recoveredIfNeeded() {
+        guard needsRecovery else { return }
+        needsRecovery = false
+        onReady()
     }
     private func appendForRecording(_ sampleBuffer: CMSampleBuffer, isVideo: Bool) {
         guard let captureId = recordingId, let accountId else { return }

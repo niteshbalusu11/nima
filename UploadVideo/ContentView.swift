@@ -284,7 +284,7 @@ struct CameraPreview: UIViewRepresentable {
         }
         override func layoutSubviews() {
             super.layoutSubviews()
-            if let connection = layerView.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
+            if let connection = layerView.connection, connection.isVideoOrientationSupported { connection.videoOrientation = .portrait }
         }
     }
 }
