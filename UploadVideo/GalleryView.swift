@@ -33,8 +33,9 @@ struct GalleryView: View {
             .overlay {
                 if model.captures.isEmpty { ContentUnavailableView("No captures", systemImage: "photo.on.rectangle") }
             }
+            .interactiveDismissDisabled(model.managingCapture)
             .navigationTitle("Recents").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(model.managingCapture) } }
         }
     }
     private func duration(_ value: Double) -> String {
@@ -82,6 +83,9 @@ private struct CaptureDetail: View {
     @State private var image: UIImage?
     @State private var player: AVPlayer?
     @State private var message: String?
+    @State private var confirmingDelete = false
+    @State private var deletionError: String?
+    @Environment(\.dismiss) private var dismiss
     private var capture: LocalCapture? { model.captures.first { $0.id == id } }
     var body: some View {
         VStack(spacing: 16) {
@@ -95,6 +99,33 @@ private struct CaptureDetail: View {
             if let capture { UploadStatus(uploaded: capture.uploaded).font(.subheadline).padding(.bottom) }
         }
         .navigationTitle(capture?.kind == "video" ? "Video" : "Photo").navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(model.managingCapture)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if model.managingCapture { ProgressView() }
+                else {
+                    Button(role: .destructive) { confirmingDelete = true } label: { Image(systemName: "trash") }
+                        .accessibilityLabel("Delete capture").disabled(capture == nil)
+                }
+            }
+        }
+        .confirmationDialog("Delete capture?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    player?.pause()
+                    do {
+                        try await model.deleteCapture(id)
+                        player = nil; image = nil; dismiss()
+                    } catch let error as APIError { deletionError = error.message }
+                    catch { deletionError = "Check your connection and try again." }
+                }
+            }
+        } message: {
+            Text("Removes it from this app and the cloud. Copies in Photos stay.")
+        }
+        .alert("Could not delete", isPresented: Binding(get: { deletionError != nil }, set: { if !$0 { deletionError = nil } })) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(deletionError ?? "Try again") }
         .task(id: id) {
             guard let capture else { return }
             do {

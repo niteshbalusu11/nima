@@ -50,6 +50,7 @@ struct API: Sendable {
         return url
     }
     func request<Response: Decodable & Sendable>(_ method: String, _ path: String, body: Data? = nil) async throws -> Response {
+        try Task.checkCancellation()
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.httpMethod = method
         request.httpBody = body
@@ -57,6 +58,7 @@ struct API: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         let (data, response) = try await URLSession.shared.data(for: request)
+        try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard (200..<300).contains(http.statusCode) else {
             let message = (try? JSONDecoder().decode(ServerError.self, from: data).error) ?? "Try again"
@@ -100,5 +102,10 @@ enum SessionKeychain {
             if status != errSecSuccess { throw APIError(status: Int(status), message: "Could not save sign-in") }
         } else if result != errSecSuccess { throw APIError(status: Int(result), message: "Could not save sign-in") }
     }
-    static func clear() { SecItemDelete(query as CFDictionary) }
+    static func clear() throws {
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw APIError(status: Int(status), message: "Could not log out")
+        }
+    }
 }

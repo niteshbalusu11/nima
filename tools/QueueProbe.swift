@@ -41,6 +41,27 @@ struct QueueProbe {
         precondition(reopened.captures(accountId: "one").first?.playable == false)
         try reopened.enqueue(Data("init".utf8), accountId: "one", captureId: "empty", captureKind: "video", sequence: 0, kind: "init")
         precondition((try? reopened.videoParts(accountId: "one", captureId: "empty")) == nil)
+        // Deletion removes every fragment, preserves other accounts, and survives a restart.
+        let backedUp = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: backedUp) }
+        let originalFolder = reopened.file(initialization).deletingLastPathComponent()
+        try FileManager.default.copyItem(at: originalFolder, to: backedUp)
+        try reopened.remove(accountId: "one", captureId: "video")
+        precondition(!FileManager.default.fileExists(atPath: originalFolder.path))
+        precondition(!FileManager.default.fileExists(atPath: reopened.file(fragment).path))
+        try reopened.acknowledge(initialization) // A late acknowledgment cannot recreate it.
+        try reopened.remove(accountId: "one", captureId: "video")
+        // Simulate interruption after committing deletion but before unlinking the original.
+        try FileManager.default.copyItem(at: backedUp, to: originalFolder)
+        let afterDelete = try UploadQueue(root: root)
+        precondition(!FileManager.default.fileExists(atPath: originalFolder.path))
+        precondition(!afterDelete.captures(accountId: "one").contains { $0.id == "video" })
+        precondition(afterDelete.pending(accountId: "two") == 1)
+        do {
+            try afterDelete.enqueue(Data("late".utf8), accountId: "one", captureId: "video", captureKind: "video", sequence: 2, kind: "media")
+            preconditionFailure("deleted capture accepted more fragments")
+        } catch let error as APIError { precondition(error.status == 410) }
+        print("PASS: durable deletion, interrupted removal, no resurrection, account isolation")
         print("PASS: offline queue, account isolation, retained originals, gallery grouping, newest first, pending-to-uploaded status")
     }
 }

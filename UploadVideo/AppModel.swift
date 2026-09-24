@@ -17,7 +17,8 @@ final class AppModel: ObservableObject {
     @Published var captureBlocked = false
     @Published var photoPulse = 0
     @Published var captures: [LocalCapture] = []
-    let library = CaptureLibrary()
+    @Published var managingCapture = false
+    private(set) var library = CaptureLibrary()
     private(set) var camera: Camera?
     private var queue: UploadQueue?
     private var workers: [Task<Void, Never>] = []
@@ -88,12 +89,12 @@ final class AppModel: ObservableObject {
     }
     private func startCamera() async {
         let granted = await AVCaptureDevice.requestAccess(for: .video)
-        guard active, !reviewing, session != nil || scanning else { return }
+        guard active, !managingCapture, !reviewing, session != nil || scanning else { return }
         cameraDenied = !granted
         if granted { camera?.start(accountId: session?.accountId) }
     }
     func enroll(_ code: String, scanned: Bool = false) async {
-        guard session == nil, !enrolling else { return }
+        guard session == nil, !enrolling, !managingCapture else { return }
         if scanned, Date().timeIntervalSince(lastInviteAttempt) < 3 { return }
         lastInviteAttempt = Date()
         guard let token = InviteToken.parse(code) else { message = "Invalid invite"; return }
@@ -108,7 +109,7 @@ final class AppModel: ObservableObject {
         catch { message = "Offline" }
     }
     func shutter(video: Bool) async {
-        guard !queueFailure, !captureBlocked, session != nil, !stopping, !preparingCapture else { return }
+        guard !managingCapture, !queueFailure, !captureBlocked, session != nil, !stopping, !preparingCapture else { return }
         message = nil
         if recording { stopping = true; camera?.stopRecording(); return }
         preparingCapture = true; defer { preparingCapture = false }
@@ -120,27 +121,67 @@ final class AppModel: ObservableObject {
             recordingStarted = Date(); recording = true; camera?.record()
         } else { camera?.takePhoto() }
     }
-    func takePhoto() { if !captureBlocked { camera?.takePhoto() } }
+    func takePhoto() { if !managingCapture && !captureBlocked { camera?.takePhoto() } }
     func reviewCaptures(_ value: Bool) async {
         reviewing = value
         if value { camera?.suspend() }
         else if active { await startCamera() }
+    }
+    func logout() async throws {
+        guard !managingCapture, !recording, !stopping, !preparingCapture else {
+            throw APIError(status: 0, message: "Finish recording first")
+        }
+        // If Keychain fails, keep the session visible so logout is never falsely reported.
+        try SessionKeychain.clear()
+        managingCapture = true
+        let pending = stopUploads()
+        session = nil; captures = []; scanning = false; reviewing = false
+        message = nil; captureBlocked = false; uploadErrors.removeAll()
+        camera?.suspend()
+        for task in pending { await task.value }
+        library = CaptureLibrary()
+        managingCapture = false
+    }
+    func deleteCapture(_ id: String) async throws {
+        guard !managingCapture, !recording, !stopping, !preparingCapture,
+              let current = session, let queue,
+              captures.contains(where: { $0.id == id }) else {
+            throw APIError(status: 0, message: "Try again")
+        }
+        managingCapture = true
+        let pending = stopUploads()
+        defer { managingCapture = false; refreshCaptures(); startUploads() }
+        for task in pending { await task.value }
+        do {
+            let _: OK = try await api.request("DELETE", "captures/\(id)")
+        } catch let error as APIError where error.status == 401 {
+            invalidateSession()
+            throw error
+        }
+        // After the server accepts deletion, no retries may send this capture again.
+        try queue.remove(accountId: current.accountId, captureId: id)
+        try await library.remove(accountId: current.accountId, captureId: id)
+        uploadErrors.removeAll(); captureBlocked = false
+        if ["Storage full", "Offline", "Upload paused"].contains(message ?? "") { message = nil }
     }
     private func refreshCaptures() {
         let updated = session.flatMap { queue?.captures(accountId: $0.accountId) } ?? []
         if captures != updated { captures = updated }
     }
     private func invalidateSession() {
-        camera?.stopRecording(); session = nil; SessionKeychain.clear(); stopUploads()
+        camera?.stopRecording(); session = nil; try? SessionKeychain.clear(); stopUploads()
         scanning = false; camera?.suspend(); message = "Enter invite"
         captures = []
     }
-    private func stopUploads() {
+    @discardableResult
+    private func stopUploads() -> [Task<Void, Never>] {
+        let pending = workers
         workers.forEach { $0.cancel() }; workers.removeAll()
         statusTask?.cancel(); statusTask = nil
+        return pending
     }
     private func startUploads() {
-        guard workers.isEmpty, let session, let queue else { return }
+        guard active, !managingCapture, workers.isEmpty, let session, let queue else { return }
         let worker = UploadWorker(api: api, queue: queue, accountId: session.accountId)
         for kind in ["video", "photo"] {
             workers.append(Task { [weak self] in
@@ -150,12 +191,27 @@ final class AppModel: ObservableObject {
                     if let item = queue.next(accountId: session.accountId, captureKind: kind) {
                         do {
                             try await worker.send(item)
+                            try Task.checkCancellation()
                             failures = 0; self.uploadErrors[kind] = nil
                             self.captureBlocked = self.uploadErrors.values.contains { $0 != "Offline" }
                         } catch is CancellationError { return }
                         catch let error as APIError where error.status == 401 {
                             if !Task.isCancelled && self.session?.token == session.token { self.invalidateSession() }
                             return
+                        }
+                        catch let error as APIError where error.status == 410 {
+                            if Task.isCancelled { return }
+                            do {
+                                try queue.remove(accountId: session.accountId, captureId: item.captureId)
+                                try await self.library.remove(accountId: session.accountId, captureId: item.captureId)
+                                self.uploadErrors[kind] = nil
+                                self.captureBlocked = self.uploadErrors.values.contains { $0 != "Offline" }
+                                self.refreshCaptures()
+                            } catch {
+                                self.uploadErrors[kind] = "Upload paused"
+                                self.captureBlocked = true
+                                try? await Task.sleep(for: .seconds(5))
+                            }
                         }
                         catch {
                             if Task.isCancelled { return }

@@ -45,6 +45,8 @@ final class UploadQueue: @unchecked Sendable {
     private let root: URL
     private var items: [QueuedObject] = []
     private var bytes = 0
+    private var deleted: Set<String> = []
+    private var deletionFile: URL { root.appendingPathComponent(".deleted.json") }
     static let limit = 3 * 1024 * 1024 * 1024
     init(root: URL? = nil) throws {
         self.root = try root ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
@@ -53,9 +55,17 @@ final class UploadQueue: @unchecked Sendable {
         var directory = self.root
         var values = URLResourceValues(); values.isExcludedFromBackup = true
         try directory.setResourceValues(values)
+        if FileManager.default.fileExists(atPath: deletionFile.path) {
+            deleted = try JSONDecoder().decode(Set<String>.self, from: Data(contentsOf: deletionFile))
+        }
         for folder in try FileManager.default.contentsOfDirectory(at: self.root, includingPropertiesForKeys: nil) {
+            if folder.lastPathComponent == deletionFile.lastPathComponent { continue }
             if folder.lastPathComponent.hasPrefix(".tmp-") { try FileManager.default.removeItem(at: folder); continue }
             let item = try JSONDecoder().decode(QueuedObject.self, from: Data(contentsOf: folder.appendingPathComponent("item.json")))
+            if deleted.contains("\(item.accountId)/\(item.captureId)") {
+                try discard(item)
+                continue
+            }
             guard FileManager.default.fileExists(atPath: folder.appendingPathComponent("media").path) else {
                 throw APIError(status: 0, message: "Saved media is missing")
             }
@@ -76,6 +86,7 @@ final class UploadQueue: @unchecked Sendable {
     func enqueue(_ data: Data, accountId: String, captureId: String, captureKind: String,
                  sequence: Int, kind: String, duration: Double = 0, startTime: Double = 0) throws {
         lock.lock(); defer { lock.unlock() }
+        guard !deleted.contains("\(accountId)/\(captureId)") else { throw APIError(status: 410, message: "Capture deleted") }
         try checkSpaceLocked(additional: data.count)
         let item = QueuedObject(id: UUID(), accountId: accountId, captureId: captureId, captureKind: captureKind,
                                 sequence: sequence, kind: kind,
@@ -127,6 +138,24 @@ final class UploadQueue: @unchecked Sendable {
         }) else { throw APIError(status: 0, message: "Video incomplete") }
         return parts.map { file($0) }
     }
+    func remove(accountId: String, captureId: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        var updated = deleted
+        updated.insert("\(accountId)/\(captureId)")
+        // Commit intent before touching any originals; restart cannot resume a deleted upload.
+        try JSONEncoder().encode(updated).write(to: deletionFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        deleted = updated
+        let removed = items.filter { $0.accountId == accountId && $0.captureId == captureId }
+        items.removeAll { $0.accountId == accountId && $0.captureId == captureId }
+        bytes -= removed.reduce(0) { $0 + $1.size }
+        for item in removed { try discard(item) }
+    }
+    private func discard(_ item: QueuedObject) throws {
+        // An interrupted filesystem removal is swept by the existing staging cleanup.
+        let staging = root.appendingPathComponent(".tmp-\(item.id.uuidString)")
+        try FileManager.default.moveItem(at: folder(item), to: staging)
+        try FileManager.default.removeItem(at: staging)
+    }
     private func folder(_ item: QueuedObject) -> URL { root.appendingPathComponent(item.id.uuidString) }
     func acknowledge(_ item: QueuedObject) throws {
         lock.lock(); defer { lock.unlock() }
@@ -142,10 +171,12 @@ struct UploadWorker: Sendable {
     let queue: UploadQueue
     let accountId: String
     func send(_ item: QueuedObject) async throws {
+        try Task.checkCancellation()
         struct Capture: Encodable { let kind: String }
         let _: OK = try await api.request("PUT", "captures/\(item.captureId)", body: API.encode(Capture(kind: item.captureKind)))
         struct Reservation: Decodable, Sendable { let acknowledged: Bool; let url: String?; let headers: [String: String]? }
         let signed: Reservation = try await api.request("POST", "captures/\(item.captureId)/objects/reserve", body: item.reservation)
+        try Task.checkCancellation()
         if !signed.acknowledged {
             guard let value = signed.url, let url = URL(string: value) else { throw URLError(.badURL) }
             #if !DEBUG
@@ -163,6 +194,7 @@ struct UploadWorker: Sendable {
             struct Ack: Encodable { let sequence: Int }
             let _: OK = try await api.request("POST", "captures/\(item.captureId)/objects/ack", body: API.encode(Ack(sequence: item.sequence)))
         }
+        try Task.checkCancellation()
         try queue.acknowledge(item)
     }
 }

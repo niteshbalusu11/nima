@@ -22,7 +22,7 @@ struct ContentView: View {
         .onChange(of: model.session?.token) { _, token in
             if token == nil { showingProfile = false; showingGallery = false }
         }
-        .sheet(isPresented: $showingProfile) { ProfileView(api: model.api) }
+        .sheet(isPresented: $showingProfile) { ProfileView(model: model) }
         .sheet(isPresented: $showingGallery) { GalleryView(model: model) }
         .onChange(of: showingGallery) { _, value in Task { await model.reviewCaptures(value) } }
     }
@@ -84,7 +84,7 @@ struct ContentView: View {
                             }
                         }
                         .accessibilityLabel(model.recording ? "Stop recording" : videoMode ? "Record video" : "Take photo")
-                        .disabled(model.stopping || model.preparingCapture || model.queueFailure || model.captureBlocked)
+                        .disabled(model.managingCapture || model.stopping || model.preparingCapture || model.queueFailure || model.captureBlocked)
                         HStack {
                             galleryButton
                             Spacer()
@@ -111,7 +111,7 @@ struct ContentView: View {
                 .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.55), lineWidth: 1))
         }
         .accessibilityLabel("Photos and videos")
-        .disabled(model.recording || model.stopping || model.preparingCapture)
+        .disabled(model.managingCapture || model.recording || model.stopping || model.preparingCapture)
     }
 }
 
@@ -161,29 +161,47 @@ struct CameraPreview: UIViewRepresentable {
 }
 
 private struct ProfileView: View {
-    let api: API
+    @ObservedObject var model: AppModel
+    private var api: API { model.api }
     @Environment(\.dismiss) private var dismiss
     @State private var profile = Profile()
     @State private var message: String?
     @State private var loaded = false
     @State private var saving = false
+    @State private var confirmingLogout = false
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Name", text: $profile.name).textContentType(.name)
-                TextField("Email", text: $profile.email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never)
-                TextField("Signal username", text: $profile.signalUsername).textInputAutocapitalization(.never).autocorrectionDisabled()
-                if profile.role == .admin {
-                    NavigationLink("Invite person") { InviteView(api: api) }
+                Section {
+                    TextField("Name", text: $profile.name).textContentType(.name)
+                    TextField("Email", text: $profile.email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never)
+                    TextField("Signal username", text: $profile.signalUsername).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    if profile.role == .admin {
+                        NavigationLink("Invite person") { InviteView(api: api) }
+                    }
+                }.disabled(!loaded || saving || model.managingCapture)
+                Section {
+                    Button("Log Out", role: .destructive) { confirmingLogout = true }
+                        .disabled(saving || model.managingCapture || model.recording || model.stopping || model.preparingCapture)
                 }
                 if let message { Text(message).foregroundStyle(.secondary) }
             }
-            .disabled(!loaded || saving)
+            .interactiveDismissDisabled(model.managingCapture)
+            .confirmationDialog("Log out?", isPresented: $confirmingLogout, titleVisibility: .visible) {
+                Button("Log Out", role: .destructive) {
+                    Task {
+                        do { try await model.logout() }
+                        catch { message = "Could not log out. Try again." }
+                    }
+                }
+            } message: {
+                Text("Pending uploads pause. You'll need a new invite to sign in again.")
+            }
             .navigationTitle("Profile").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Back") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Back") { dismiss() }.disabled(model.managingCapture) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }.disabled(!loaded || saving)
+                    Button("Save") { Task { await save() } }.disabled(!loaded || saving || model.managingCapture)
                 }
             }
             .task {
