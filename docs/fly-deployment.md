@@ -6,8 +6,8 @@ September 24, 2026. Production hosting is Fly.io with Tigris; this supersedes th
 
 1. Run one Go container on one shared-CPU Machine (512 MB) in `ewr`, with an encrypted 1 GB volume mounted at `/data`. SQLite, including WAL/SHM files, stays on that volume. Verify container permissions and survival across a restart.
 2. Provision a private Tigris bucket attached to the Fly app. Read Fly's `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `BUCKET_NAME` secrets directly. Preserve the existing short-lived signed PUT/GET flow. Verify overwrite rejection, private reads, and lost-acknowledgment recovery against Tigris.
-3. Let Fly Proxy terminate HTTPS and route to port 8080. Keep the Machine running for the live-upload pilot. Check `/health` every 15 seconds. SQLite schema initialization runs in the actual app process, where the volume is mounted.
-4. Deploy using `fly deploy --ha=false`. Keep exactly one Machine: there is no SQLite replication. Set the Release iOS URL to the deployed HTTPS endpoint. Verify real API enrollment, synthetic live video/photo uploads and playback before Stop, profile persistence, and restart recovery.
+3. Let Fly Proxy terminate HTTPS and route to port 8080. Keep the Machine running for the live-upload pilot. Check `/health` every 15 seconds. Numbered SQLite migrations in `server/migrations.go` run transactionally before serving requests in the actual app process, where the volume is mounted.
+4. Deploy through GitHub Actions on server changes pushed to `master`, or trigger the same workflow on demand. CI uses `fly deploy --ha=false`. Keep exactly one Machine: there is no SQLite replication. Set the Release iOS URL to the deployed HTTPS endpoint. Verify real API enrollment, synthetic live video/photo uploads and playback before Stop, profile persistence, and restart recovery.
 5. Enable daily volume snapshots retained for 14 days. Provide consistent SQLite backup/download commands and take a verified initial backup. Treat deploy/restart downtime as a known limitation of this single-instance pilot.
 
 ## Why these settings
@@ -44,6 +44,6 @@ Verified against the deployed service:
 
 The first unused 24-hour pilot invite is saved privately at `server/data/fly/pilot-invite.png`. The initial backup is `server/data/fly/initial-backup-2026-09-24.sqlite`. These files, test sessions and provisioning credentials are gitignored.
 
-Redeploy with `./tools/deploy-fly.sh`. See [server/README.md](../server/README.md) for invites, retrieval, and backup commands. The old Caddy/Compose production scaffold was removed; Fly handles HTTPS.
+Redeploy by pushing server changes to `master` or triggering `deploy-fly.yml` in GitHub Actions. Startup applies pending migrations on the mounted volume; failed migrations roll back and stop startup. See [server/README.md](../server/README.md) for invites, retrieval, and backup commands. The old Caddy/Compose production scaffold was removed; Fly handles HTTPS.
 
 Physical iPhone recording, cellular interruption, long-session/thermal behavior, and TestFlight installation still need device validation. This is a single-instance pilot; deployments and host failures can interrupt the API.

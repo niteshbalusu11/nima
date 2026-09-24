@@ -6,7 +6,7 @@ One Go container on Fly, one SQLite volume, and one private Tigris bucket. No se
 
 ## Deploy
 
-[GitHub Actions](https://github.com/niteshbalusu11/streamvideo/actions/workflows/deploy-fly.yml) deploys pushes to `master` that change `server/**`, `tools/deploy-fly.sh`, or the deployment workflow. iOS-only changes do not trigger a deploy. To deploy manually, choose **Run workflow** in Actions, or run:
+[GitHub Actions](https://github.com/niteshbalusu11/streamvideo/actions/workflows/deploy-fly.yml) deploys pushes to `master` that change `server/**`, `tools/deploy-fly.sh`, or the deployment workflow. iOS-only changes do not trigger a deploy. To trigger a deployment on demand, choose **Run workflow** in Actions, or run:
 
 ```sh
 gh workflow run deploy-fly.yml --ref master
@@ -21,11 +21,13 @@ flyctl tokens create deploy -a upload-video-api --name github-actions-streamvide
   | gh secret set FLY_API_TOKEN --repo niteshbalusu11/streamvideo
 ```
 
-For a local deploy, from the repository root:
+All deployments go through this workflow. `tools/deploy-fly.sh` is the CI implementation, not a separate manual deployment step.
 
-```sh
-./tools/deploy-fly.sh
-```
+## Database migrations
+
+The app runs the numbered SQL migrations in `migrations.go` before starting the HTTP server, on the Machine where `/data` is mounted. SQLite `user_version` records progress. Pending migrations run under one write lock and transaction; a failure rolls back the batch and stops startup without deleting data. A binary refuses to open a database newer than its migration list.
+
+Migration 1 is the current schema, including admin/member roles, and adopts the existing prerelease database. For future schema changes, append a migration, add an upgrade test with existing data, and push to `master`. Never edit or reorder an applied migration. Repeated startup is safe; no Fly SQL commands, reset, or separate release-command Machine is needed. Take a backup before destructive schema changes. Deploy an older binary only if it supports the database version; otherwise fix forward through CI.
 
 Configuration lives in [fly.toml](fly.toml): `ewr`, 1 shared CPU, 512 MB memory, a 1 GB volume at `/data`, HTTPS, and `/health` checks. Keep **one Machine**; `--ha=false` prevents an automatic spare. A deploy or restart briefly interrupts the API; the phone's upload queue retries.
 
@@ -43,17 +45,19 @@ flyctl logs -a upload-video-api
 Run admin commands inside the existing container as `app`. Find its ID with `flyctl machine list -a upload-video-api`.
 
 ```sh
-flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo invite --out /data/invite.png' -a upload-video-api
+flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo invite --admin --out /data/admin-invite.png --text-out /data/admin-invite.txt' -a upload-video-api
 flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo accounts' -a upload-video-api
 flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo invite --account ACCOUNT_ID --out /data/replacement.png' -a upload-video-api
 flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo revoke --account ACCOUNT_ID' -a upload-video-api
 ```
 
-Download an invite with `flyctl ssh sftp get /data/invite.png ./invite.png -a upload-video-api -u app`. If this network cannot establish Fly's SSH tunnel, use `tools/fly-download.py` instead. Hand out QR codes individually; each is a secret, expires after 24 hours, and is single-use. An optional `--ttl` changes its lifetime.
+Download an invite with `flyctl ssh sftp get /data/admin-invite.png ./admin-invite.png -a upload-video-api -u app`. If this network cannot establish Fly's SSH tunnel, use `tools/fly-download.py` instead. Hand out QR codes individually; each is a secret, expires after 24 hours, and is single-use. An optional `--ttl` changes its lifetime.
 
-Sessions do not expire automatically. A phone stays signed in using its saved Keychain token. Enrollment returns only `token` and `account_id`; sessions have no expiry field. Unused invites still expire after 24 hours.
+Sessions do not expire automatically. A phone stays signed in using its saved Keychain token. Enrollment returns `token`, `account_id`, and `role`; sessions have no expiry field. Unused invites still expire after 24 hours.
 
-`--account` binds a fresh invite to an existing active account, useful for a replacement phone or retrieval helper. The admin-only `revoke` command remains available if explicitly needed; nothing invokes it automatically. Account revocation blocks all its sessions; previously issued storage URLs expire within two minutes.
+Only the CLI creates admins (`--admin`). Omit that flag for a member invite. In the app, admins open **Profile → Invite person** to create a member invite and show its QR or copy its token. Each invite creates a separate member account; admin status grants no access to other people’s profiles or media. New users can paste the token or scan the QR. In-app invites last 24 hours; generating another does not cancel an existing invite.
+
+`--account` binds a fresh invite to an existing active account, useful for a replacement phone or retrieval helper. It preserves the account role and cannot be combined with `--admin`. The admin-only `revoke` command remains available if explicitly needed; nothing invokes it automatically. Account revocation blocks all its sessions; previously issued storage URLs expire within two minutes.
 
 ## Retrieve media
 
@@ -86,6 +90,7 @@ Protect backups as user data. They contain account/media metadata, not the media
 
 - Public: `GET /health`, `POST /enroll`.
 - Authenticated: `GET/PATCH /me`, `PUT /captures/{id}`, `POST /captures/{id}/objects/reserve`, `POST /captures/{id}/objects/ack`, `GET /captures`, `GET /captures/{id}`.
+- Admin only: `POST /invites` with `{}`; returns `{token, expires_at}`. Clients cannot choose role, account, or expiry. Limited to ten creations per admin per minute, with no total allowance.
 - Optional: `POST /captures/{id}/finish`; retrieval does not depend on it.
 
 Protected requests check the session token, explicit revocation, active membership and ownership. Enrollment is limited to ten attempts per peer IP per minute; clients behind the same proxy may share that allowance. Objects are capped at 12 MiB and account reservations at 5 GiB. Uploaded data is immutable through conditional PUTs and verified by SHA-256.

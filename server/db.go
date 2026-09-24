@@ -24,29 +24,10 @@ func openDB(path string) (*sql.DB, error) {
 	}
 	// One connection serializes short metadata transactions, including invite redemption.
 	db.SetMaxOpenConns(1)
-	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
- CREATE TABLE IF NOT EXISTS accounts (
- id TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 1,
- role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('member','admin')),
- name TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', signal_username TEXT NOT NULL DEFAULT '',
- created_at INTEGER NOT NULL);
- CREATE TABLE IF NOT EXISTS invites (
- hash TEXT PRIMARY KEY, account_id TEXT REFERENCES accounts(id), expires_at INTEGER NOT NULL,
- role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('member','admin')),
- created_by TEXT REFERENCES accounts(id),
- consumed_at INTEGER);
- CREATE TABLE IF NOT EXISTS sessions (
- hash TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
- revoked INTEGER NOT NULL DEFAULT 0);
- CREATE TABLE IF NOT EXISTS captures (
- id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), kind TEXT NOT NULL,
- created_at INTEGER NOT NULL, finished INTEGER NOT NULL DEFAULT 0);
- CREATE INDEX IF NOT EXISTS captures_owner ON captures(account_id, created_at);
- CREATE TABLE IF NOT EXISTS objects (
- capture_id TEXT NOT NULL REFERENCES captures(id), sequence INTEGER NOT NULL, kind TEXT NOT NULL,
- object_key TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL, md5 TEXT NOT NULL, size INTEGER NOT NULL,
- duration REAL NOT NULL, start_time REAL NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0,
- PRIMARY KEY (capture_id, sequence));`)
+	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;`)
+	if err == nil {
+		err = migrate(db, migrations)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
