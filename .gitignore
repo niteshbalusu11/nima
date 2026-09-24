@@ -12,6 +12,9 @@ server/uploadvideo
 invite*.png
 retrieved/
 build/
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
 .swiftpm/
 *.session.json
 __pycache__/

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/skip2/go-qrcode"
 )
 
@@ -45,6 +47,27 @@ func run() error {
 			return nil
 		}
 		_, err = store.client.CreateBucket(context.Background(), &s3.CreateBucketInput{Bucket: aws.String(store.bucket)})
+		return err
+	}
+	if command == "web-cors" {
+		flags := flag.NewFlagSet("web-cors", flag.ExitOnError)
+		origin := flags.String("origin", "", "HTTPS origin serving the web app")
+		_ = flags.Parse(os.Args[2:])
+		u, err := url.Parse(*origin)
+		if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || (u.Scheme != "https" && !(u.Scheme == "http" && os.Getenv("APP_ENV") == "development")) {
+			return fmt.Errorf("--origin must be a web origin (HTTPS except in development)")
+		}
+		store, err := newS3()
+		if err != nil {
+			return err
+		}
+		_, err = store.client.PutBucketCors(context.Background(), &s3.PutBucketCorsInput{
+			Bucket: aws.String(store.bucket),
+			CORSConfiguration: &types.CORSConfiguration{CORSRules: []types.CORSRule{{
+				AllowedOrigins: []string{u.Scheme + "://" + u.Host}, AllowedMethods: []string{"PUT"},
+				AllowedHeaders: []string{"*"}, MaxAgeSeconds: aws.Int32(300),
+			}}},
+		})
 		return err
 	}
 	db, err := openDB(env("DATABASE_PATH", "data/app.sqlite"))
@@ -128,7 +151,7 @@ func run() error {
 			return err
 		}
 		app := &api{db: db, store: store}
-		srv := &http.Server{Addr: env("LISTEN_ADDR", "127.0.0.1:8080"), Handler: app.handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+		srv := &http.Server{Addr: env("LISTEN_ADDR", "127.0.0.1:8080"), Handler: withWebsite(app.handler()), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		go app.cleanDeletedCaptures(ctx)
@@ -144,6 +167,16 @@ func run() error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("commands: serve, invite, accounts, revoke, backup, init-bucket")
+		return fmt.Errorf("commands: serve, invite, accounts, revoke, backup, init-bucket, web-cors")
 	}
+}
+
+func withWebsite(apiHandler http.Handler) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/app/", http.StatusPermanentRedirect)
+	})
+	mux.Handle("GET /app/", http.StripPrefix("/app/", http.FileServer(http.Dir(env("WEB_DIR", "../web/dist")))))
+	mux.Handle("/", apiHandler)
+	return mux
 }
