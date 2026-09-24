@@ -1,0 +1,113 @@
+import SwiftUI
+import AVKit
+
+struct GalleryView: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 12) {
+                    ForEach(model.captures) { capture in
+                        NavigationLink {
+                            CaptureDetail(id: capture.id, model: model)
+                        } label: {
+                            VStack(spacing: 6) {
+                                CaptureThumbnail(capture: capture, library: model.library)
+                                    .aspectRatio(1, contentMode: .fit)
+                                    .overlay(alignment: .bottomTrailing) {
+                                        if capture.kind == "video" {
+                                            Label(duration(capture.duration), systemImage: "play.fill")
+                                                .font(.caption2.weight(.semibold)).padding(5)
+                                                .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 5)).padding(4)
+                                        }
+                                    }
+                                UploadStatus(uploaded: capture.uploaded).font(.caption2)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(capture.kind == "video" ? "Video" : "Photo"), \(capture.createdAt.formatted()), \(capture.uploaded ? "Uploaded" : "Pending")")
+                    }
+                }.padding(.horizontal, 3)
+            }
+            .overlay {
+                if model.captures.isEmpty { ContentUnavailableView("No captures", systemImage: "photo.on.rectangle") }
+            }
+            .navigationTitle("Recents").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+    private func duration(_ value: Double) -> String {
+        let seconds = Int(value.rounded())
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+struct CaptureThumbnail: View {
+    let capture: LocalCapture?
+    let library: CaptureLibrary
+    @State private var image: UIImage?
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color(white: 0.14)
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill()
+                        .frame(width: geometry.size.width, height: geometry.size.height).clipped()
+                } else {
+                    Image(systemName: capture?.kind == "video" ? "video" : "photo.on.rectangle")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .task(id: capture?.thumbnailID) {
+            image = nil
+            guard let capture else { return }
+            if let data = try? await library.thumbnail(for: capture), !Task.isCancelled { image = UIImage(data: data) }
+        }
+    }
+}
+
+private struct UploadStatus: View {
+    let uploaded: Bool
+    var body: some View {
+        Label(uploaded ? "Uploaded" : "Pending", systemImage: uploaded ? "checkmark.icloud" : "icloud.and.arrow.up")
+            .foregroundStyle(uploaded ? .green : .orange)
+    }
+}
+
+private struct CaptureDetail: View {
+    let id: String
+    @ObservedObject var model: AppModel
+    @State private var image: UIImage?
+    @State private var player: AVPlayer?
+    @State private var message: String?
+    private var capture: LocalCapture? { model.captures.first { $0.id == id } }
+    var body: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Color.black
+                if let image { Image(uiImage: image).resizable().scaledToFit() }
+                else if let player { VideoPlayer(player: player) }
+                else if let message { Text(message).foregroundStyle(.secondary) }
+                else { ProgressView() }
+            }
+            if let capture { UploadStatus(uploaded: capture.uploaded).font(.subheadline).padding(.bottom) }
+        }
+        .navigationTitle(capture?.kind == "video" ? "Video" : "Photo").navigationBarTitleDisplayMode(.inline)
+        .task(id: id) {
+            guard let capture else { return }
+            do {
+                if capture.kind == "photo" {
+                    let data = try await model.library.photo(for: capture)
+                    if !Task.isCancelled { image = UIImage(data: data) }
+                } else {
+                    let url = try await model.library.video(for: capture)
+                    guard !Task.isCancelled else { return }
+                    player = AVPlayer(url: url); player?.play()
+                }
+            } catch { if !Task.isCancelled { message = "Could not open" } }
+        }
+        .onDisappear { player?.pause(); player = nil }
+    }
+}

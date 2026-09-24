@@ -14,6 +14,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private let onError: @Sendable (String) -> Void
     private let onCode: @Sendable (String) -> Void
     private let onRecordingEnded: @Sendable () -> Void
+    private let onPhotoCaptured: @Sendable () -> Void
     private var configured = false
     private var audioEnabled = false
     private var accountId: String?
@@ -23,8 +24,9 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private var observations: [NSObjectProtocol] = []
     init(queue: UploadQueue, onError: @escaping @Sendable (String) -> Void,
          onCode: @escaping @Sendable (String) -> Void,
-         onRecordingEnded: @escaping @Sendable () -> Void) {
+         onRecordingEnded: @escaping @Sendable () -> Void, onPhotoCaptured: @escaping @Sendable () -> Void) {
         uploadQueue = queue; self.onError = onError; self.onCode = onCode; self.onRecordingEnded = onRecordingEnded
+        self.onPhotoCaptured = onPhotoCaptured
         super.init()
         for name in [AVCaptureSession.wasInterruptedNotification, AVCaptureSession.runtimeErrorNotification] {
             observations.append(NotificationCenter.default.addObserver(forName: name, object: session, queue: nil) { [weak self] _ in
@@ -117,10 +119,14 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             guard let accountId, session.isRunning else { return }
             do { try uploadQueue.checkSpace() } catch { onError("Storage full"); return }
             let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+            settings.flashMode = .off
             settings.photoQualityPrioritization = .speed
             photoAccounts[settings.uniqueID] = accountId
             photos.capturePhoto(with: settings, delegate: self)
         }
+    }
+    func photoOutput(_ output: AVCapturePhotoOutput, didCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
+        onPhotoCaptured()
     }
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         // Copy data before leaving the callback; disk I/O and camera state run on the capture queue.

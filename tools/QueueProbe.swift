@@ -14,11 +14,15 @@ struct QueueProbe {
         precondition(restored.pending(accountId: "one") == 2)
         precondition(restored.pending(accountId: "two") == 1)
         precondition(restored.next(accountId: "one", captureKind: "photo") == nil)
+        let gallery = restored.captures(accountId: "one")
+        precondition(gallery.count == 1 && gallery[0].id == "video" && !gallery[0].uploaded && gallery[0].playable)
+        precondition(gallery[0].duration == 1.2 && gallery[0].parts.count == 2)
         let initialization = restored.next(accountId: "one", captureKind: "video")!
         precondition(initialization.sequence == 0)
         let original = try Data(contentsOf: restored.file(initialization))
         precondition(original == Data("init".utf8))
         try restored.acknowledge(initialization)
+        precondition(!restored.captures(accountId: "one")[0].uploaded)
         let reopened = try UploadQueue(root: root)
         let fragment = reopened.next(accountId: "one", captureKind: "video")!
         precondition(fragment.sequence == 1 && fragment.duration == 1.2 && fragment.startTime == 100)
@@ -27,11 +31,16 @@ struct QueueProbe {
         let parts = try reopened.videoParts(accountId: "one", captureId: "video")
         precondition(parts == [reopened.file(initialization), reopened.file(fragment)])
         precondition((try? reopened.videoParts(accountId: "two", captureId: "video")) == nil)
+        try reopened.acknowledge(fragment)
+        let uploaded = try UploadQueue(root: root).captures(accountId: "one")
+        precondition(uploaded.count == 1 && uploaded[0].uploaded)
         try reopened.enqueue(Data("init".utf8), accountId: "one", captureId: "gap", captureKind: "video", sequence: 0, kind: "init")
         try reopened.enqueue(Data("fragment".utf8), accountId: "one", captureId: "gap", captureKind: "video", sequence: 2, kind: "media")
         precondition((try? reopened.videoParts(accountId: "one", captureId: "gap")) == nil)
+        precondition(reopened.captures(accountId: "one").first?.id == "gap")
+        precondition(reopened.captures(accountId: "one").first?.playable == false)
         try reopened.enqueue(Data("init".utf8), accountId: "one", captureId: "empty", captureKind: "video", sequence: 0, kind: "init")
         precondition((try? reopened.videoParts(accountId: "one", captureId: "empty")) == nil)
-        print("PASS: offline queue survives relaunch; ordered init, account isolation, durable ack, retained originals")
+        print("PASS: offline queue, account isolation, retained originals, gallery grouping, newest first, pending-to-uploaded status")
     }
 }

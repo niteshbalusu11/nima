@@ -1,6 +1,18 @@
 import Foundation
 import CryptoKit
 
+struct LocalCapture: Identifiable, Equatable, Sendable {
+    let id: String
+    let accountId: String
+    let kind: String
+    let createdAt: Date
+    let duration: Double
+    let uploaded: Bool
+    let playable: Bool
+    let parts: [URL]
+    var thumbnailID: String { "\(accountId)/\(id)/\(min(parts.count, 2))" }
+}
+
 struct QueuedObject: Codable, Sendable, Identifiable {
     let id: UUID
     let accountId: String
@@ -93,6 +105,19 @@ final class UploadQueue: @unchecked Sendable {
         return items.filter { $0.accountId == accountId && !$0.acknowledged }.count
     }
     func file(_ item: QueuedObject) -> URL { folder(item).appendingPathComponent("media") }
+    func captures(accountId: String) -> [LocalCapture] {
+        lock.lock(); defer { lock.unlock() }
+        return Dictionary(grouping: items.filter { $0.accountId == accountId }, by: \.captureId).values.map { group in
+            let parts = group.sorted { $0.sequence < $1.sequence }
+            let first = parts[0]
+            let playable = first.captureKind == "photo" || (parts.count > 1 && parts.enumerated().allSatisfy { index, part in
+                part.sequence == index && part.kind == (index == 0 ? "init" : "media")
+            })
+            return LocalCapture(id: first.captureId, accountId: accountId, kind: first.captureKind,
+                                createdAt: group.map(\.createdAt).min()!, duration: parts.reduce(0) { $0 + $1.duration },
+                                uploaded: parts.allSatisfy(\.acknowledged), playable: playable, parts: parts.map { file($0) })
+        }.sorted { $0.createdAt > $1.createdAt }
+    }
     func videoParts(accountId: String, captureId: String) throws -> [URL] {
         lock.lock(); defer { lock.unlock() }
         let parts = items.filter { $0.accountId == accountId && $0.captureId == captureId && $0.captureKind == "video" }

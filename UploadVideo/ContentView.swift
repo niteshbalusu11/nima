@@ -6,6 +6,8 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var videoMode = true
     @State private var showingProfile = false
+    @State private var showingGallery = false
+    @State private var shutterClosed = false
     var body: some View {
         Group {
             if model.session == nil { AuthView(model: model) }
@@ -17,13 +19,26 @@ struct ContentView: View {
             // Permission dialogs temporarily make the scene inactive; only backgrounding stops capture.
             if phase == .active { Task { await model.activate() } } else if phase == .background { model.deactivate() }
         }
-        .onChange(of: model.session?.token) { _, token in if token == nil { showingProfile = false } }
+        .onChange(of: model.session?.token) { _, token in
+            if token == nil { showingProfile = false; showingGallery = false }
+        }
         .sheet(isPresented: $showingProfile) { ProfileView(api: model.api) }
+        .sheet(isPresented: $showingGallery) { GalleryView(model: model) }
+        .onChange(of: showingGallery) { _, value in Task { await model.reviewCaptures(value) } }
     }
     private var cameraContent: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let camera = model.camera { CameraPreview(session: camera.session).ignoresSafeArea() }
+            Color.black.opacity(shutterClosed ? 0.8 : 0).ignoresSafeArea().allowsHitTesting(false)
+                .task(id: model.photoPulse) {
+                    guard model.photoPulse > 0 else { return }
+                    shutterClosed = true
+                    try? await Task.sleep(for: .milliseconds(70))
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.easeOut(duration: 0.18)) { shutterClosed = false }
+                }
+                .sensoryFeedback(.impact, trigger: model.photoPulse)
             VStack {
                 HStack {
                     if model.session != nil {
@@ -70,22 +85,33 @@ struct ContentView: View {
                         }
                         .accessibilityLabel(model.recording ? "Stop recording" : videoMode ? "Record video" : "Take photo")
                         .disabled(model.stopping || model.preparingCapture || model.queueFailure || model.captureBlocked)
-                        if model.recording {
-                            HStack {
+                        HStack {
+                            galleryButton
+                            Spacer()
+                            if model.recording {
                                 Button { model.takePhoto() } label: {
                                     Circle().fill(.white).frame(width: 38, height: 38).padding(12)
                                 }.accessibilityLabel("Take photo")
-                                Spacer()
-                            }.padding(.leading, 24)
-                        }
+                            }
+                        }.padding(.horizontal, 24)
                     }.padding(.top, 16).padding(.bottom, 22)
                 }
+                if model.cameraDenied { galleryButton.padding(.bottom, 22).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 24) }
             }
             .foregroundStyle(.white)
             .background(alignment: .bottom) {
                 LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
             }
         }
+    }
+    private var galleryButton: some View {
+        Button { showingGallery = true } label: {
+            CaptureThumbnail(capture: model.captures.first, library: model.library)
+                .frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.55), lineWidth: 1))
+        }
+        .accessibilityLabel("Photos and videos")
+        .disabled(model.recording || model.stopping || model.preparingCapture)
     }
 }
 

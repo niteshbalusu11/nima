@@ -15,12 +15,16 @@ final class AppModel: ObservableObject {
     @Published var cameraDenied = false
     @Published var queueFailure = false
     @Published var captureBlocked = false
+    @Published var photoPulse = 0
+    @Published var captures: [LocalCapture] = []
+    let library = CaptureLibrary()
     private(set) var camera: Camera?
     private var queue: UploadQueue?
     private var workers: [Task<Void, Never>] = []
     private var statusTask: Task<Void, Never>?
     private var uploadErrors: [String: String] = [:]
     private var active = false
+    private var reviewing = false
     private var lastInviteAttempt = Date.distantPast
     var api: API { API(baseURL: API.configuredURL, token: session?.token) }
     init() {
@@ -39,7 +43,10 @@ final class AppModel: ObservableObject {
                 }
             }, onRecordingEnded: { [weak self] in
                 Task { @MainActor in self?.recording = false; self?.stopping = false }
+            }, onPhotoCaptured: { [weak self] in
+                Task { @MainActor in self?.photoPulse += 1 }
             })
+            refreshCaptures()
         } catch { queueFailure = true; message = "Could not open saved media" }
     }
     func activate() async {
@@ -81,7 +88,7 @@ final class AppModel: ObservableObject {
     }
     private func startCamera() async {
         let granted = await AVCaptureDevice.requestAccess(for: .video)
-        guard active, session != nil || scanning else { return }
+        guard active, !reviewing, session != nil || scanning else { return }
         cameraDenied = !granted
         if granted { camera?.start(accountId: session?.accountId) }
     }
@@ -114,9 +121,19 @@ final class AppModel: ObservableObject {
         } else { camera?.takePhoto() }
     }
     func takePhoto() { if !captureBlocked { camera?.takePhoto() } }
+    func reviewCaptures(_ value: Bool) async {
+        reviewing = value
+        if value { camera?.suspend() }
+        else if active { await startCamera() }
+    }
+    private func refreshCaptures() {
+        let updated = session.flatMap { queue?.captures(accountId: $0.accountId) } ?? []
+        if captures != updated { captures = updated }
+    }
     private func invalidateSession() {
         camera?.stopRecording(); session = nil; SessionKeychain.clear(); stopUploads()
         scanning = false; camera?.suspend(); message = "Enter invite"
+        captures = []
     }
     private func stopUploads() {
         workers.forEach { $0.cancel() }; workers.removeAll()
@@ -157,6 +174,7 @@ final class AppModel: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { return }
                 let pending = queue.pending(accountId: session.accountId)
+                self.refreshCaptures()
                 if let error = self.uploadErrors.values.sorted().first {
                     self.cloudSymbol = "icloud.slash"
                     if self.message == nil || ["Offline", "Upload paused"].contains(self.message ?? "") {
