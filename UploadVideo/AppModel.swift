@@ -6,6 +6,7 @@ final class AppModel: ObservableObject {
     @Published var session: Session?
     @Published var recording = false
     @Published var stopping = false
+    @Published var preparingCapture = false
     @Published var recordingStarted = Date()
     @Published var message: String?
     @Published var cloudSymbol = "icloud"
@@ -73,9 +74,12 @@ final class AppModel: ObservableObject {
         catch { message = "Offline" }
     }
     func shutter(video: Bool) async {
-        guard !queueFailure, !captureBlocked, session != nil, !stopping else { return }
+        guard !queueFailure, !captureBlocked, session != nil, !stopping, !preparingCapture else { return }
         message = nil
         if recording { stopping = true; camera?.stopRecording(); return }
+        preparingCapture = true; defer { preparingCapture = false }
+        if !(await PhotoLibrary.requestAccess()) { message = "Photos access off" }
+        guard active, session != nil, !captureBlocked else { return }
         if video {
             _ = await AVCaptureDevice.requestAccess(for: .audio)
             guard active else { return }

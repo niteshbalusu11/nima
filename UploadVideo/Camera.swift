@@ -89,7 +89,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     }
     func stopRecording() { work.async { [self] in finishRecording() } }
     private func finishRecording() {
-        guard recordingId != nil else { return }
+        guard let captureId = recordingId, let owner = accountId else { return }
         let finishing = writer
         recordingId = nil; writer = nil
         if let finishing {
@@ -97,6 +97,12 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
                 _ = finishing
                 if !success { onError("Recording interrupted") }
                 onRecordingEnded()
+                if success {
+                    Task {
+                        do { try await PhotoLibrary.saveVideo(queue: uploadQueue, accountId: owner, captureId: captureId) }
+                        catch { onError(PhotoLibrary.canSave ? "Could not save video to Photos" : "Photos access off") }
+                    }
+                }
             }
         } else { onRecordingEnded() }
     }
@@ -127,6 +133,10 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
                 try uploadQueue.enqueue(data, accountId: owner, captureId: UUID().uuidString.lowercased(),
                                         captureKind: "photo", sequence: 0, kind: "photo")
             } catch { onError("Could not save photo"); finishRecording() }
+            Task {
+                do { try await PhotoLibrary.savePhoto(data) }
+                catch { onError(PhotoLibrary.canSave ? "Could not save photo to Photos" : "Photos access off") }
+            }
         }
     }
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {

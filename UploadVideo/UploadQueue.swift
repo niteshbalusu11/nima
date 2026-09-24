@@ -93,6 +93,15 @@ final class UploadQueue: @unchecked Sendable {
         return items.filter { $0.accountId == accountId && !$0.acknowledged }.count
     }
     func file(_ item: QueuedObject) -> URL { folder(item).appendingPathComponent("media") }
+    func videoParts(accountId: String, captureId: String) throws -> [URL] {
+        lock.lock(); defer { lock.unlock() }
+        let parts = items.filter { $0.accountId == accountId && $0.captureId == captureId && $0.captureKind == "video" }
+            .sorted { $0.sequence < $1.sequence }
+        guard parts.count > 1, parts.enumerated().allSatisfy({ index, part in
+            part.sequence == index && part.kind == (index == 0 ? "init" : "media")
+        }) else { throw APIError(status: 0, message: "Video incomplete") }
+        return parts.map { file($0) }
+    }
     private func folder(_ item: QueuedObject) -> URL { root.appendingPathComponent(item.id.uuidString) }
     func acknowledge(_ item: QueuedObject) throws {
         lock.lock(); defer { lock.unlock() }

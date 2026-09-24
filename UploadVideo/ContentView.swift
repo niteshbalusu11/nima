@@ -59,7 +59,7 @@ struct ContentView: View {
                             }
                         }
                         .accessibilityLabel(model.recording ? "Stop recording" : videoMode ? "Record video" : "Take photo")
-                        .disabled(model.stopping || model.queueFailure || model.captureBlocked)
+                        .disabled(model.stopping || model.preparingCapture || model.queueFailure || model.captureBlocked)
                         if model.recording {
                             HStack {
                                 Button { model.takePhoto() } label: {
@@ -79,7 +79,8 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .task { await model.activate() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await model.activate() } } else { model.deactivate() }
+            // Permission dialogs temporarily make the scene inactive; only backgrounding stops capture.
+            if phase == .active { Task { await model.activate() } } else if phase == .background { model.deactivate() }
         }
         .sheet(isPresented: $showingProfile) { ProfileView(api: model.api) }
     }
