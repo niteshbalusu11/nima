@@ -3,6 +3,7 @@ import { api, APIError, clearSession, loadSession, saveSession, type Profile, ty
 import { UploadQueue } from './queue'
 
 const invitePrefix = 'uploadvideo:invite:'
+const appIcon = '/app/app-icon.png'
 
 function parseInvite(value: string): string | null {
   const token = value.trim().replace(invitePrefix, '')
@@ -252,9 +253,8 @@ export default function App() {
 
   if (!session) return <main className="invite-page">
     <div className="invite-content">
-      <div className="wordmark">WITNESS<span className="wordmark-dot">.</span></div>
+      <div className="brand invite-brand"><img src={appIcon} alt="" /><span className="wordmark">Nima</span></div>
       <div className="invite-bottom">
-        <div className="aperture" aria-hidden="true"><span /></div>
         <h1>Enter invite</h1>
         <form onSubmit={enroll}>
           <label className="sr-only" htmlFor="invite">Invite code</label>
@@ -274,7 +274,7 @@ export default function App() {
     <div className="camera-vignette" />
     <div className={`photo-flash ${flash ? 'visible' : ''}`} />
     <header className="camera-header">
-      <span className="small-wordmark">WITNESS<span>.</span></span>
+      <span className="brand camera-brand"><img src={appIcon} alt="" /><span className="small-wordmark">Nima</span></span>
       <div className="header-actions">
         <div className={`cloud-status ${uploadError ? 'problem' : pending ? 'busy' : ''}`} role="status" aria-live="polite">
           <CloudIcon /><span>{uploadError || (pending ? 'Uploading' : 'Saved')}</span>
