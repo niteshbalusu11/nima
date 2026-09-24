@@ -5,6 +5,7 @@
 <key>NSPhotoLibraryAddUsageDescription</key><string>Save the photos and videos you take to Photos.</string>
 <key>NSLocationWhenInUseUsageDescription</key><string>Attach your location to photo and video uploads.</string>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
-<key>NSLocalNetworkUsageDescription</key><string>Connect to your local upload server.</string>
+<key>NSLocalNetworkUsageDescription</key><string>Connect to your local upload server and test approved nearby devices.</string>
+<key>NSBonjourServices</key><array><string>_uv-probe._tcp</string></array>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
 </dict></plist>

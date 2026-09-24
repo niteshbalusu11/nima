@@ -356,6 +356,12 @@ private struct ProfileView: View {
                         NavigationLink("Invite person") { InviteView(api: api) }
                     }
                 }.disabled(!loaded || saving || model.managingCapture)
+                #if DEBUG
+                Section("Development") {
+                    NavigationLink("Nearby transport probe") { NearbyProbeView(model: model) }
+                        .disabled(model.recording || model.stopping || model.preparingCapture || model.managingCapture)
+                }
+                #endif
                 Section {
                     Button("Log Out", role: .destructive) { confirmingLogout = true }
                         .liquidGlassButton()

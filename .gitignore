@@ -17,4 +17,5 @@ web/dist/
 web/tsconfig.tsbuildinfo
 .swiftpm/
 *.session.json
+*.nearby.json
 __pycache__/

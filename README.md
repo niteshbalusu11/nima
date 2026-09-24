@@ -70,6 +70,8 @@ With RustFS running and its private bucket initialized, from the repository root
 
 Requires `ffmpeg`/`ffprobe`. This uses the **app's actual Swift encoder, disk queue, and upload worker** to upload synthetic video/audio and a photo to RustFS, retrieve them before Stop, and decode the retrieved video. It also checks dropped-frame handling, persisted acknowledgments, account isolation, conditional PUTs, and recovery without an upload acknowledgment.
 
+The upcoming nearby-sharing feature has separate [transport and storage feasibility probes](docs/nearby-feasibility.md), available in Debug builds and through local scripts. Physical offline transfer and production Tigris validation are still pending.
+
 ```sh
 xcodebuild -project UploadVideo.xcodeproj -scheme UploadVideo \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
