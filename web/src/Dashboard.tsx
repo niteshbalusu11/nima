@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, APIError, type Profile, type Session } from './api'
 import LiveVideo from './LiveVideo'
+import VideoThumbnail from './VideoThumbnail'
 
 type Capture = {
   id: string
@@ -45,6 +46,8 @@ export default function Dashboard() {
   const [now, setNow] = useState(Date.now())
   const activity = useRef(new Map<string, { count: number; changed: number }>())
   const loadingPhotos = useRef(new Set<string>())
+  const selectedRow = useRef<HTMLButtonElement>(null)
+  const keyboardNavigation = useRef(false)
   const currentToken = useRef<string | null>(session?.token ?? null)
   currentToken.current = session?.token ?? null
 
@@ -123,22 +126,34 @@ export default function Dashboard() {
   useEffect(() => {
     if (!authorized) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return
       if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]')) return
-      const videos = captures.filter(capture => capture.kind === 'video')
-      if (!videos.length) return
+      if (!captures.some(capture => capture.kind === 'video')) return
       event.preventDefault()
       setSelectedId(current => {
-        const index = videos.findIndex(video => video.id === current)
-        if (index < 0) return event.key === 'ArrowLeft' ? videos[videos.length - 1].id : videos[0].id
-        const direction = event.key === 'ArrowLeft' ? 1 : -1
-        return videos[(index + direction + videos.length) % videos.length].id
+        const direction = event.key === 'ArrowUp' ? -1 : 1
+        let index = captures.findIndex(capture => capture.id === current)
+        if (index < 0) index = direction < 0 ? 0 : captures.length - 1
+        for (let offset = 1; offset <= captures.length; offset++) {
+          const next = captures[(index + direction * offset + captures.length) % captures.length]
+          if (next.kind === 'video') {
+            keyboardNavigation.current = next.id !== current
+            return next.id
+          }
+        }
+        return current
       })
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [authorized, captures])
+
+  useEffect(() => {
+    if (!keyboardNavigation.current) return
+    keyboardNavigation.current = false
+    selectedRow.current?.scrollIntoView({ block: 'nearest' })
+  }, [selectedId])
 
   async function enroll(event: FormEvent) {
     event.preventDefault()
@@ -208,7 +223,7 @@ export default function Dashboard() {
                 onError={() => setPhotos(previous => { const next = { ...previous }; delete next[selected.id]; return next })} />
             : <div className="dash-empty"><span className="dash-empty-ring" /><p>Waiting for photo upload</p></div>)}
         </div>
-        {selected && <div className="dash-stage-meta"><span>CAPTURE ID&nbsp; {selected.id.slice(0, 8)}</span><span>{selected.kind === 'video' ? `${Math.max(0, selected.acknowledged_objects - 1)} video fragments uploaded` : 'Photo'}</span><span className="dash-shortcuts">← → videos{selected.kind === 'video' ? ' · Space play/pause' : ''}</span></div>}
+        {selected && <div className="dash-stage-meta"><span>CAPTURE ID&nbsp; {selected.id.slice(0, 8)}</span><span>{selected.kind === 'video' ? `${Math.max(0, selected.acknowledged_objects - 1)} video fragments uploaded` : 'Photo'}</span><span className="dash-shortcuts">↑ ↓ videos{selected.kind === 'video' ? ' · Space play/pause' : ''}</span></div>}
       </section>
       <aside className="dash-feed" aria-label="Recent captures">
         <div className="dash-feed-head"><div><span className="dash-eyebrow">ACTIVITY</span><h2>Recent captures</h2></div><span>{captures.length}</span></div>
@@ -218,10 +233,13 @@ export default function Dashboard() {
             const changed = activity.current.get(capture.id)?.changed ?? 0
             const active = capture.kind === 'video' && !capture.finished && capture.acknowledged_objects > 0 && now - changed < 8000
             return <button className={`dash-feed-row ${capture.id === selectedId ? 'selected' : ''}`} key={capture.id}
+              ref={capture.id === selectedId ? selectedRow : null}
               onClick={() => setSelectedId(capture.id)} aria-pressed={capture.id === selectedId}>
-              <span className="dash-feed-thumb">{capture.kind === 'photo' && photos[capture.id]
-                ? <img src={photos[capture.id]} alt="" referrerPolicy="no-referrer" />
-                : capture.kind === 'video' ? <span className="dash-play-glyph">▶</span> : <span className="dash-photo-glyph">▧</span>}</span>
+              {capture.kind === 'video'
+                ? <VideoThumbnail captureId={capture.id} token={session.token} available={capture.acknowledged_objects > 1} />
+                : <span className="dash-feed-thumb">{photos[capture.id]
+                  ? <img src={photos[capture.id]} alt="" referrerPolicy="no-referrer" />
+                  : <span className="dash-photo-glyph">▧</span>}</span>}
               <span className="dash-feed-info"><strong>{capture.account_name}</strong><small>{capture.kind === 'video' ? 'Video' : 'Photo'} · {timeLabel(capture.created_at)}</small></span>
               <span className={`dash-feed-state ${active ? 'active' : ''}`}>{capture.kind === 'photo'
                 ? capture.acknowledged_objects ? 'READY' : 'WAIT'

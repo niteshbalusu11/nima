@@ -41,8 +41,9 @@
 .dash-feed-row { width: 100%; min-height: 88px; padding: 12px 18px 12px 22px; display: flex; align-items: center; gap: 13px; border: 0; border-bottom: 1px solid #242827; background: transparent; color: inherit; text-align: left; transition: background .16s ease; animation: dash-row-in .25s ease both; }
 .dash-feed-row:hover { background: #171b1a; }
 .dash-feed-row.selected { background: #202524; box-shadow: inset 2px 0 #f36c5e; }
-.dash-feed-thumb { width: 56px; height: 56px; flex: none; display: grid; place-items: center; overflow: hidden; background: #202423; color: #b1b8b4; }
+.dash-feed-thumb { position: relative; width: 56px; height: 56px; flex: none; display: grid; place-items: center; overflow: hidden; background: #202423; color: #b1b8b4; }
 .dash-feed-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.dash-thumb-play { position: absolute; bottom: 4px; left: 4px; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: #080b0bc9; color: #fff; font-size: 9px; padding-left: 1px; }
 .dash-play-glyph { font-size: 19px; margin-left: 3px; }
 .dash-photo-glyph { font-size: 23px; font-weight: 300; }
 .dash-feed-info { min-width: 0; flex: 1; display: grid; gap: 6px; }
