@@ -33,7 +33,7 @@ func openDB(path string) (*sql.DB, error) {
  hash TEXT PRIMARY KEY, account_id TEXT REFERENCES accounts(id), expires_at INTEGER NOT NULL,
  consumed_at INTEGER);
  CREATE TABLE IF NOT EXISTS sessions (
- hash TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), expires_at INTEGER NOT NULL,
+ hash TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
  revoked INTEGER NOT NULL DEFAULT 0);
  CREATE TABLE IF NOT EXISTS captures (
  id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), kind TEXT NOT NULL,

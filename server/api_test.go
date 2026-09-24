@@ -104,14 +104,14 @@ func enrollTest(t *testing.T, h *testAPI) (string, string) {
 	mustStatus(t, 201, status, body)
 	var result struct {
 		Token     string
-		AccountID string `json:"account_id"`
-		ExpiresAt *int64 `json:"expires_at"`
+		AccountID string          `json:"account_id"`
+		ExpiresAt json.RawMessage `json:"expires_at"`
 	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.ExpiresAt == nil || *result.ExpiresAt != 0 {
-		t.Fatal("session must return expires_at=0 for existing iPhone clients")
+	if len(result.ExpiresAt) != 0 {
+		t.Fatal("enrollment response must not include a session expiry")
 	}
 	return result.Token, result.AccountID
 }
@@ -356,7 +356,7 @@ func TestLiveMediaBeforeStop(t *testing.T) {
 	token, account := enrollTest(t, h)
 	folder := t.TempDir()
 	sessionPath := filepath.Join(folder, "session.json")
-	data, _ := json.Marshal(map[string]any{"token": token, "account_id": account, "expires_at": 0})
+	data, _ := json.Marshal(map[string]any{"token": token, "account_id": account})
 	if err = os.WriteFile(sessionPath, data, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -401,20 +401,14 @@ func TestLiveMediaBeforeStop(t *testing.T) {
 func TestSessionsHaveNoAutomaticExpiry(t *testing.T) {
 	h := setup(t)
 	token, _ := enrollTest(t, h)
-	var expires int64
-	if err := h.db.QueryRow("SELECT expires_at FROM sessions WHERE hash=?", digest(token)).Scan(&expires); err != nil {
+	var expiryColumns int
+	if err := h.db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='expires_at'").Scan(&expiryColumns); err != nil {
 		t.Fatal(err)
 	}
-	if expires != 0 {
-		t.Fatal("new session has an automatic expiry")
+	if expiryColumns != 0 {
+		t.Fatal("session schema must not include an expiry")
 	}
 	status, body := request(t, h.server.URL, "GET", "/me", token, nil)
-	mustStatus(t, 200, status, body)
-	// Previously issued sessions remain valid even beyond their old seven-day deadline.
-	if _, err := h.db.Exec("UPDATE sessions SET expires_at=? WHERE hash=?", time.Now().Add(-30*24*time.Hour).Unix(), digest(token)); err != nil {
-		t.Fatal(err)
-	}
-	status, body = request(t, h.server.URL, "GET", "/me", token, nil)
 	mustStatus(t, 200, status, body)
 	status, body = request(t, h.server.URL, "GET", "/me", secret(), nil)
 	mustStatus(t, 401, status, body)
