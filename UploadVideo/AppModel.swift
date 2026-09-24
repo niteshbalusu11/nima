@@ -6,6 +6,8 @@ import AVFoundation
 final class AppModel: ObservableObject {
     @Published var session: Session?
     @Published var recording = false
+    @Published private(set) var cameraMode: CameraMode = .back
+    @Published private(set) var switchingCamera = false
     @Published var stopping = false
     @Published var preparingCapture = false
     @Published var recordingStarted = Date()
@@ -100,6 +102,19 @@ final class AppModel: ObservableObject {
             camera?.start(accountId: session?.accountId)
         }
     }
+    func selectCameraMode(_ mode: CameraMode) {
+        guard active, session != nil, !recording, !stopping, !preparingCapture, !switchingCamera,
+              !managingCapture, mode != cameraMode, let camera else { return }
+        switchingCamera = true
+        camera.setMode(mode) { [weak self] success in
+            Task { @MainActor in
+                guard let self else { return }
+                if success { self.cameraMode = mode }
+                else { self.message = mode == .both ? "Both cameras unavailable" : "Camera unavailable" }
+                self.switchingCamera = false
+            }
+        }
+    }
     func setLocationEnabled(_ enabled: Bool) {
         guard locationEnabled != enabled else { return }
         locationEnabled = enabled
@@ -126,7 +141,7 @@ final class AppModel: ObservableObject {
         catch { message = "Offline" }
     }
     func shutter(video: Bool) async {
-        guard !managingCapture, !queueFailure, !captureBlocked, session != nil, !stopping, !preparingCapture else { return }
+        guard !managingCapture, !queueFailure, !captureBlocked, session != nil, !stopping, !preparingCapture, !switchingCamera else { return }
         message = nil
         if recording { stopping = true; camera?.stopRecording(); return }
         preparingCapture = true; defer { preparingCapture = false }
@@ -153,6 +168,7 @@ final class AppModel: ObservableObject {
         managingCapture = true
         let pending = stopUploads()
         session = nil; captures = []; scanning = false; reviewing = false
+        cameraMode = .back
         message = nil; captureBlocked = false; uploadErrors.removeAll()
         location.stop()
         camera?.suspend()
@@ -189,7 +205,7 @@ final class AppModel: ObservableObject {
     private func invalidateSession() {
         camera?.stopRecording(); session = nil; try? SessionKeychain.clear(); stopUploads()
         location.stop()
-        scanning = false; camera?.suspend(); message = "Enter invite"
+        scanning = false; cameraMode = .back; camera?.suspend(); message = "Enter invite"
         captures = []
     }
     @discardableResult

@@ -41,7 +41,10 @@ struct ContentView: View {
     private var cameraContent: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if let camera = model.camera { CameraPreview(session: camera.session, onFocus: camera.focus, onZoom: camera.zoom).ignoresSafeArea() }
+            if let camera = model.camera {
+                if model.cameraMode == .both { MultiCameraPreview(camera: camera).ignoresSafeArea() }
+                else { CameraPreview(session: camera.session, onFocus: camera.focus, onZoom: camera.zoom).ignoresSafeArea() }
+            }
             Color.black.opacity(shutterClosed ? 0.8 : 0).ignoresSafeArea().allowsHitTesting(false)
                 .task(id: model.photoPulse) {
                     guard model.photoPulse > 0 else { return }
@@ -94,6 +97,24 @@ struct ContentView: View {
                 } else {
                     if !model.recording {
                         HStack(spacing: 4) {
+                            ForEach(CameraMode.allCases) { mode in
+                                Button { model.selectCameraMode(mode) } label: {
+                                    Text(mode.title)
+                                        .frame(minWidth: 72, minHeight: 44)
+                                        .foregroundStyle(model.cameraMode == mode ? .black : .white)
+                                        .background(model.cameraMode == mode ? .yellow : .clear, in: Capsule())
+                                        .contentShape(Capsule())
+                                }
+                                .disabled(model.switchingCamera || (mode == .both && !AVCaptureMultiCamSession.isMultiCamSupported))
+                                .accessibilityAddTraits(model.cameraMode == mode ? .isSelected : [])
+                            }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .buttonStyle(.plain)
+                        .padding(4)
+                        .background(.black.opacity(0.8), in: Capsule())
+                        .padding(.top, 12)
+                        HStack(spacing: 4) {
                             Button { videoMode = false } label: {
                                 Text("Photo")
                                     .frame(minWidth: 108, minHeight: 50)
@@ -115,7 +136,7 @@ struct ContentView: View {
                         .buttonStyle(.plain)
                         .padding(4)
                         .background(.black.opacity(0.8), in: Capsule())
-                        .padding(.top, 12)
+                        .padding(.top, 8)
                     }
                     ZStack {
                         Button { Task { await model.shutter(video: videoMode) } } label: {
@@ -129,7 +150,7 @@ struct ContentView: View {
                             }
                         }
                         .accessibilityLabel(model.recording ? "Stop recording" : videoMode ? "Record video" : "Take photo")
-                        .disabled(model.managingCapture || model.stopping || model.preparingCapture || model.queueFailure || model.captureBlocked)
+                        .disabled(model.managingCapture || model.stopping || model.preparingCapture || model.switchingCamera || model.queueFailure || model.captureBlocked)
                         HStack {
                             galleryButton
                             Spacer()
@@ -247,6 +268,53 @@ struct CameraPreview: UIViewRepresentable {
         override func layoutSubviews() {
             super.layoutSubviews()
             if let connection = layerView.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
+        }
+    }
+}
+
+struct MultiCameraPreview: UIViewRepresentable {
+    let camera: Camera
+    func makeUIView(context: Context) -> PreviewView {
+        PreviewView(back: camera.multiBackPreview, front: camera.multiFrontPreview,
+                    onFocus: camera.focus, onZoom: camera.zoom)
+    }
+    func updateUIView(_ uiView: PreviewView, context: Context) {}
+
+    final class PreviewView: UIView {
+        private let back: AVCaptureVideoPreviewLayer
+        private let front: AVCaptureVideoPreviewLayer
+        private let onFocus: (CGPoint) -> Void
+        private let onZoom: (CGFloat) -> Void
+        init(back: AVCaptureVideoPreviewLayer, front: AVCaptureVideoPreviewLayer,
+             onFocus: @escaping (CGPoint) -> Void, onZoom: @escaping (CGFloat) -> Void) {
+            self.back = back; self.front = front; self.onFocus = onFocus; self.onZoom = onZoom
+            super.init(frame: .zero)
+            layer.addSublayer(back)
+            layer.addSublayer(front)
+            front.cornerRadius = 12
+            front.masksToBounds = true
+            front.borderColor = UIColor.white.cgColor
+            front.borderWidth = 2
+            addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
+            addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:))))
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            back.frame = bounds
+            let width = bounds.width * 0.3
+            front.frame = CGRect(x: bounds.maxX - width - 16, y: safeAreaInsets.top + 100,
+                                 width: width, height: width * 16 / 9)
+        }
+        @objc private func tapped(_ gesture: UITapGestureRecognizer) {
+            let point = gesture.location(in: self)
+            guard !front.frame.contains(point) else { return }
+            onFocus(back.captureDevicePointConverted(fromLayerPoint: point))
+        }
+        @objc private func pinched(_ gesture: UIPinchGestureRecognizer) {
+            guard gesture.state == .changed else { return }
+            onZoom(gesture.scale)
+            gesture.scale = 1
         }
     }
 }
