@@ -4,5 +4,6 @@
 <key>APIBaseURL</key><string>$(API_BASE_URL)</string>
 <key>ITSAppUsesNonExemptEncryption</key><false/>
 <key>NSPhotoLibraryAddUsageDescription</key><string>Save the photos and videos you take to Photos.</string>
+<key>NSLocationWhenInUseUsageDescription</key><string>Attach your location to photo and video uploads.</string>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
 </dict></plist>

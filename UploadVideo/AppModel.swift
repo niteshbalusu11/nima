@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+@preconcurrency import CoreLocation
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -16,10 +17,12 @@ final class AppModel: ObservableObject {
     @Published var queueFailure = false
     @Published var captureBlocked = false
     @Published var photoPulse = 0
+    @Published private(set) var locationEnabled = UserDefaults.standard.object(forKey: "locationEnabled") as? Bool ?? true
     @Published var captures: [LocalCapture] = []
     @Published var managingCapture = false
     private(set) var library = CaptureLibrary()
     private(set) var camera: Camera?
+    private let location = CaptureLocationProvider()
     private var queue: UploadQueue?
     private var workers: [Task<Void, Never>] = []
     private var statusTask: Task<Void, Never>?
@@ -76,6 +79,7 @@ final class AppModel: ObservableObject {
     }
     func deactivate() {
         active = false
+        location.stop()
         camera?.suspend()
         stopUploads()
     }
@@ -91,7 +95,20 @@ final class AppModel: ObservableObject {
         let granted = await AVCaptureDevice.requestAccess(for: .video)
         guard active, !managingCapture, !reviewing, session != nil || scanning else { return }
         cameraDenied = !granted
-        if granted { camera?.start(accountId: session?.accountId) }
+        if granted {
+            if session != nil && locationEnabled { location.start() }
+            camera?.start(accountId: session?.accountId)
+        }
+    }
+    func setLocationEnabled(_ enabled: Bool) {
+        guard locationEnabled != enabled else { return }
+        locationEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "locationEnabled")
+        if enabled && active && session != nil && !reviewing && !cameraDenied && !managingCapture {
+            location.start()
+        } else {
+            location.stop()
+        }
     }
     func enroll(_ code: String, scanned: Bool = false) async {
         guard session == nil, !enrolling, !managingCapture else { return }
@@ -118,13 +135,13 @@ final class AppModel: ObservableObject {
         if video {
             _ = await AVCaptureDevice.requestAccess(for: .audio)
             guard active else { return }
-            recordingStarted = Date(); recording = true; camera?.record()
-        } else { camera?.takePhoto() }
+            recordingStarted = Date(); recording = true; camera?.record(location: locationEnabled ? location.current : nil)
+        } else { camera?.takePhoto(location: locationEnabled ? location.current : nil) }
     }
-    func takePhoto() { if !managingCapture && !captureBlocked { camera?.takePhoto() } }
+    func takePhoto() { if !managingCapture && !captureBlocked { camera?.takePhoto(location: locationEnabled ? location.current : nil) } }
     func reviewCaptures(_ value: Bool) async {
         reviewing = value
-        if value { camera?.suspend() }
+        if value { location.stop(); camera?.suspend() }
         else if active { await startCamera() }
     }
     func logout() async throws {
@@ -137,6 +154,7 @@ final class AppModel: ObservableObject {
         let pending = stopUploads()
         session = nil; captures = []; scanning = false; reviewing = false
         message = nil; captureBlocked = false; uploadErrors.removeAll()
+        location.stop()
         camera?.suspend()
         for task in pending { await task.value }
         library = CaptureLibrary()
@@ -170,6 +188,7 @@ final class AppModel: ObservableObject {
     }
     private func invalidateSession() {
         camera?.stopRecording(); session = nil; try? SessionKeychain.clear(); stopUploads()
+        location.stop()
         scanning = false; camera?.suspend(); message = "Enter invite"
         captures = []
     }
@@ -242,6 +261,66 @@ final class AppModel: ObservableObject {
                 }
                 try? await Task.sleep(for: .milliseconds(300))
             }
+        }
+    }
+}
+
+@MainActor
+private final class CaptureLocationProvider: NSObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private var active = false
+    private var latest: CaptureLocation?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        manager.distanceFilter = 10
+    }
+
+    var current: CaptureLocation? {
+        guard active, let latest, abs(Date().timeIntervalSince1970 - Double(latest.timestamp)) <= 30 else { return nil }
+        return latest
+    }
+
+    func start() {
+        active = true
+        if manager.authorizationStatus == .notDetermined { manager.requestWhenInUseAuthorization() }
+        else { updateAuthorization() }
+    }
+
+    func stop() {
+        active = false
+        latest = nil
+        manager.stopUpdatingLocation()
+    }
+
+    private func updateAuthorization() {
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            if active { manager.startUpdatingLocation() }
+        case .denied, .restricted:
+            latest = nil
+            manager.stopUpdatingLocation()
+        case .notDetermined:
+            break
+        @unknown default:
+            latest = nil
+        }
+    }
+
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        Task { @MainActor [weak self] in self?.updateAuthorization() }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let fix = locations.last, fix.horizontalAccuracy >= 0 else { return }
+        let location = CaptureLocation(latitude: fix.coordinate.latitude, longitude: fix.coordinate.longitude,
+                                       horizontalAccuracyM: fix.horizontalAccuracy,
+                                       timestamp: Int64(fix.timestamp.timeIntervalSince1970))
+        Task { @MainActor [weak self] in
+            guard let self, self.active else { return }
+            self.latest = location
         }
     }
 }

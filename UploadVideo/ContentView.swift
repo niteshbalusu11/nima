@@ -50,6 +50,19 @@ struct ContentView: View {
                                 .font(.title2)
                         }
                     }
+                    HStack {
+                        Spacer()
+                        Toggle(isOn: Binding(get: { model.locationEnabled }, set: { model.setLocationEnabled($0) })) {
+                            Label("Location", systemImage: model.locationEnabled ? "location.fill" : "location.slash.fill")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .toggleStyle(.switch)
+                        .tint(.green)
+                        .fixedSize()
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(.black.opacity(0.8), in: Capsule())
+                        .accessibilityHint("Include location with new photos and videos")
+                    }
                     if model.recording {
                         Text(model.recordingStarted, style: .timer).monospacedDigit()
                             .padding(.horizontal, 12).padding(.vertical, 5).background(.red, in: Capsule())

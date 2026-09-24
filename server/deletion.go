@@ -39,7 +39,8 @@ func (a *api) deleteCapture(w http.ResponseWriter, r *http.Request) {
 		failure(w, 404, "Not found")
 		return
 	}
-	if _, err = tx.Exec("UPDATE captures SET deleted_at=COALESCE(deleted_at,?) WHERE id=?", now, id); err != nil {
+	if _, err = tx.Exec(`UPDATE captures SET deleted_at=COALESCE(deleted_at,?), latitude=NULL, longitude=NULL,
+		horizontal_accuracy_m=NULL, location_timestamp=NULL WHERE id=?`, now, id); err != nil {
 		failure(w, 503, "Unavailable")
 		return
 	}

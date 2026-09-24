@@ -21,8 +21,9 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private var photoDimensions: CMVideoDimensions?
     private var accountId: String?
     private var recordingId: String?
+    private var recordingLocation: CaptureLocation?
     private var writer: SegmentWriter?
-    private var photoAccounts: [Int64: String] = [:]
+    private var photoAccounts: [Int64: (String, CaptureLocation?)] = [:]
     private var observations: [NSObjectProtocol] = []
     init(queue: UploadQueue, onError: @escaping @Sendable (String) -> Void,
          onCode: @escaping @Sendable (String) -> Void,
@@ -133,18 +134,18 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             audio.setSampleBufferDelegate(self, queue: work); audioEnabled = true
         }
     }
-    func record() {
+    func record(location: CaptureLocation?) {
         work.async { [self] in
             guard accountId != nil, recordingId == nil, session.isRunning else { onRecordingEnded(); return }
             do { try uploadQueue.checkSpace() } catch { onError("Storage full"); onRecordingEnded(); return }
-            enableAudio(); recordingId = UUID().uuidString.lowercased()
+            enableAudio(); recordingId = UUID().uuidString.lowercased(); recordingLocation = location
         }
     }
     func stopRecording() { work.async { [self] in finishRecording() } }
     private func finishRecording() {
         guard let captureId = recordingId, let owner = accountId else { return }
         let finishing = writer
-        recordingId = nil; writer = nil
+        recordingId = nil; recordingLocation = nil; writer = nil
         if let finishing {
             finishing.finish { [self, finishing] success in
                 _ = finishing
@@ -165,7 +166,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             if session.isRunning { session.stopRunning() }
         }
     }
-    func takePhoto() {
+    func takePhoto(location: CaptureLocation?) {
         work.async { [self] in
             guard let accountId, session.isRunning else { return }
             do { try uploadQueue.checkSpace() } catch { onError("Storage full"); return }
@@ -173,7 +174,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             settings.flashMode = .off
             settings.photoQualityPrioritization = .balanced
             if let photoDimensions { settings.maxPhotoDimensions = photoDimensions }
-            photoAccounts[settings.uniqueID] = accountId
+            photoAccounts[settings.uniqueID] = (accountId, location)
             photos.capturePhoto(with: settings, delegate: self)
         }
     }
@@ -185,11 +186,11 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         let data = photo.fileDataRepresentation()
         let id = photo.resolvedSettings.uniqueID
         work.async { [self] in
-            guard let owner = photoAccounts.removeValue(forKey: id) else { return }
+            guard let (owner, location) = photoAccounts.removeValue(forKey: id) else { return }
             guard error == nil, let data else { onError("Photo failed"); return }
             do {
                 try uploadQueue.enqueue(data, accountId: owner, captureId: UUID().uuidString.lowercased(),
-                                        captureKind: "photo", sequence: 0, kind: "photo")
+                                        captureKind: "photo", sequence: 0, kind: "photo", location: location)
             } catch { onError("Could not save photo"); finishRecording() }
             Task {
                 do { try await PhotoLibrary.savePhoto(data) }
@@ -203,10 +204,12 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         do {
             if writer == nil {
                 guard isVideo else { return }
+                let location = recordingLocation
                 writer = try SegmentWriter(startTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer), includeAudio: audioEnabled) { [self] data, sequence, kind, duration, startTime in
                     do {
                         try uploadQueue.enqueue(data, accountId: accountId, captureId: captureId, captureKind: "video",
-                                                sequence: sequence, kind: kind, duration: duration, startTime: startTime)
+                                                sequence: sequence, kind: kind, duration: duration, startTime: startTime,
+                                                location: location)
                         try uploadQueue.checkSpace()
                     } catch {
                         onError("Storage full"); stopRecording()

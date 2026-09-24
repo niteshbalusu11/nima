@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS accounts (
 `, `
 ALTER TABLE captures ADD COLUMN deleted_at INTEGER;
 CREATE INDEX captures_deleted ON captures(deleted_at) WHERE deleted_at IS NOT NULL;
+`, `
+ALTER TABLE captures ADD COLUMN latitude REAL;
+ALTER TABLE captures ADD COLUMN longitude REAL;
+ALTER TABLE captures ADD COLUMN horizontal_accuracy_m REAL;
+ALTER TABLE captures ADD COLUMN location_timestamp INTEGER;
 `,
 }
 

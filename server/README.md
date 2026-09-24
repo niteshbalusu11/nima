@@ -78,6 +78,7 @@ python3 tools/retrieve.py --api https://upload-video-api.fly.dev --session viewe
 ```
 
 The helper saves JPEGs and playable fragmented MP4 snapshots, even while recording continues. It checks hashes and reports missing sequences. No `/finish` or final upload acknowledgment is required to recover media already in Tigris.
+When a capture has location metadata, the helper also writes a private `location.json` sidecar next to the media.
 
 ## SQLite backup
 
@@ -100,6 +101,9 @@ Protect backups as user data. They contain account/media metadata, not the media
 - Authenticated: `GET/PATCH /me`, `PUT /captures/{id}`, `POST /captures/{id}/objects/reserve`, `POST /captures/{id}/objects/ack`, `GET /captures`, `GET /captures/{id}`, `DELETE /captures/{id}`.
 - Admin only: `POST /invites` with `{}`; returns `{token, expires_at}`. Clients cannot choose role, account, or expiry. Limited to ten creations per admin per minute, with no total allowance.
 - Optional: `POST /captures/{id}/finish`; retrieval does not depend on it.
+
+`PUT /captures/{id}` accepts an optional `location` object with `latitude`, `longitude`, `horizontal_accuracy_m`, and Unix `timestamp`. The location is fixed for that capture, returned by the owner's capture list and detail endpoints, and cleared on deletion. Older clients may omit it.
+Migration 3 adds nullable location columns, so existing captures remain valid without a location.
 
 Protected requests check the session token, explicit revocation, active membership and ownership. Enrollment is limited to ten attempts per peer IP per minute; clients behind the same proxy may share that allowance. Objects are capped at 12 MiB and account reservations at 10 GiB per account. Uploaded data is immutable through conditional PUTs and verified by SHA-256.
 

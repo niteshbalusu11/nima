@@ -42,10 +42,13 @@ For local API testing, copy `UploadVideo/Configuration/Local.xcconfig.example` t
 For an iPhone on the same Wi-Fi:
 
 1. In `server/.env`, set `LISTEN_ADDR=0.0.0.0:8080`, `STORAGE_BIND_IP=0.0.0.0`, and `S3_ENDPOINT=http://YOUR_MAC_LAN_IP:9000`. Restart `start-local.sh`. The signed storage URL **must be reachable by the phone**; localhost would point to the phone itself.
+   If the server uses a different address to reach storage, keep that address in `S3_ENDPOINT` and set `S3_PUBLIC_ENDPOINT` to the phone-reachable address. The server signs upload and download URLs with `S3_PUBLIC_ENDPOINT`.
 2. Copy `UploadVideo/Configuration/Local.xcconfig.example` to `Local.xcconfig` in the same directory. Set `API_BASE_URL` to the Mac's LAN address, preserving the example's Xcode slash syntax.
 3. Run the Debug build with the configured ProData signing team and scan the QR. Use a trusted local network for this HTTP development setup. `Local.xcconfig` only affects Debug; Release always defaults to the deployed HTTPS API.
 
 The camera UI has Photo/Video, shutter/stop, a photo button during recording, tap-to-focus, a small cloud indicator, and an optional profile sheet. Video targets 720×1280 at 30 fps and 1.5 Mbps; photos request up to 12 MP with balanced processing when the camera format supports it. Microphone denial allows silent video. Profile fields are optional contact details, never login credentials.
+
+The Location switch at the top of the camera starts on and remembers the user's choice. With the switch on and When In Use location permission, each photo upload includes a recent location fix and each video uses one fix from recording start. Turning the switch off stops location collection and omits location from new captures. The server stores latitude, longitude, accuracy, and fix time with the capture. Capturing still works without permission or a recent fix; location is omitted. Location is capture metadata, not embedded in the JPEG/MP4 or the local Photos copy.
 
 Photos save automatically to the iPhone's Photos library after capture, including during video recording. Completed videos save as one MP4 after Stop, reusing the already encoded fragments without re-encoding. The first shutter tap requests add-only Photos permission; denial leaves capture and uploads working and shows “Photos access off.” Enable it later in iOS Settings. Photos saving does not wait for the network, and live uploads do not wait for Photos.
 

@@ -35,9 +35,11 @@ args.out.mkdir(parents=True, exist_ok=True, mode=0o700)
 objects = []
 after = -1
 kind = None
+location = None
 while True:
     page = api('/captures/' + urllib.parse.quote(args.capture, safe='') + '?after=' + str(after))
     kind = page['kind']
+    location = page.get('location')
     for obj in page['objects']:
         if not obj['acknowledged']:
             print('Missing:', obj['sequence'])
@@ -56,6 +58,12 @@ while True:
     if len(page['objects']) < 50:
         break
     after = page['objects'][-1]['sequence']
+
+if location:
+    location_file = args.out / 'location.json'
+    location_file.write_text(json.dumps(location, indent=2) + '\n')
+    location_file.chmod(0o600)
+    print(location_file)
 
 if kind == 'video':
     initialization = next((path for obj, path in objects if obj['kind'] == 'init' and path), None)

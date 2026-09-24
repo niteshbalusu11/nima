@@ -49,6 +49,31 @@ type object struct {
 	URL          string  `json:"url,omitempty"`
 }
 
+type captureLocation struct {
+	Latitude            *float64 `json:"latitude"`
+	Longitude           *float64 `json:"longitude"`
+	HorizontalAccuracyM *float64 `json:"horizontal_accuracy_m"`
+	Timestamp           *int64   `json:"timestamp"`
+}
+
+func (l captureLocation) valid() bool {
+	if l.Latitude == nil || l.Longitude == nil || l.HorizontalAccuracyM == nil || l.Timestamp == nil {
+		return false
+	}
+	return !math.IsNaN(*l.Latitude) && !math.IsInf(*l.Latitude, 0) && *l.Latitude >= -90 && *l.Latitude <= 90 &&
+		!math.IsNaN(*l.Longitude) && !math.IsInf(*l.Longitude, 0) && *l.Longitude >= -180 && *l.Longitude <= 180 &&
+		!math.IsNaN(*l.HorizontalAccuracyM) && !math.IsInf(*l.HorizontalAccuracyM, 0) &&
+		*l.HorizontalAccuracyM >= 0 && *l.HorizontalAccuracyM <= 1_000_000 &&
+		*l.Timestamp > 0 && *l.Timestamp <= time.Now().Unix()+300
+}
+
+func locationFromDB(lat, lon, accuracy sql.NullFloat64, timestamp sql.NullInt64) *captureLocation {
+	if !lat.Valid || !lon.Valid || !accuracy.Valid || !timestamp.Valid {
+		return nil
+	}
+	return &captureLocation{&lat.Float64, &lon.Float64, &accuracy.Float64, &timestamp.Int64}
+}
+
 func (o object) contentType() string {
 	if o.Kind == "photo" {
 		return "image/jpeg"
@@ -282,17 +307,24 @@ func (a *api) owned(w http.ResponseWriter, r *http.Request) (string, bool) {
 }
 func (a *api) createCapture(w http.ResponseWriter, r *http.Request) {
 	var p struct {
-		Kind string `json:"kind"`
+		Kind     string           `json:"kind"`
+		Location *captureLocation `json:"location"`
 	}
 	if !decode(w, r, &p) {
 		return
 	}
 	id := r.PathValue("id")
-	if !captureID.MatchString(id) || (p.Kind != "video" && p.Kind != "photo") {
+	if !captureID.MatchString(id) || (p.Kind != "video" && p.Kind != "photo") || (p.Location != nil && !p.Location.valid()) {
 		failure(w, 400, "Invalid capture")
 		return
 	}
-	_, err := a.db.ExecContext(r.Context(), "INSERT INTO captures(id,account_id,kind,created_at) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING", id, account(r), p.Kind, time.Now().Unix())
+	var latitude, longitude, accuracy, timestamp any
+	if p.Location != nil {
+		latitude, longitude = *p.Location.Latitude, *p.Location.Longitude
+		accuracy, timestamp = *p.Location.HorizontalAccuracyM, *p.Location.Timestamp
+	}
+	_, err := a.db.ExecContext(r.Context(), `INSERT INTO captures(id,account_id,kind,created_at,latitude,longitude,horizontal_accuracy_m,location_timestamp)
+		VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, id, account(r), p.Kind, time.Now().Unix(), latitude, longitude, accuracy, timestamp)
 	if err != nil {
 		failure(w, 503, "Unavailable")
 		return
@@ -304,6 +336,20 @@ func (a *api) createCapture(w http.ResponseWriter, r *http.Request) {
 	if kind != p.Kind {
 		failure(w, 409, "Capture conflict")
 		return
+	}
+	if p.Location != nil {
+		var lat, lon, acc sql.NullFloat64
+		var ts sql.NullInt64
+		if err = a.db.QueryRowContext(r.Context(), "SELECT latitude,longitude,horizontal_accuracy_m,location_timestamp FROM captures WHERE id=?", id).Scan(&lat, &lon, &acc, &ts); err != nil {
+			failure(w, 503, "Unavailable")
+			return
+		}
+		stored := locationFromDB(lat, lon, acc, ts)
+		if stored == nil || *stored.Latitude != *p.Location.Latitude || *stored.Longitude != *p.Location.Longitude ||
+			*stored.HorizontalAccuracyM != *p.Location.HorizontalAccuracyM || *stored.Timestamp != *p.Location.Timestamp {
+			failure(w, 409, "Capture conflict")
+			return
+		}
 	}
 	jsonResponse(w, 200, map[string]bool{"ok": true})
 }
@@ -443,25 +489,30 @@ func (a *api) finish(w http.ResponseWriter, r *http.Request) {
 }
 func (a *api) listCaptures(w http.ResponseWriter, r *http.Request) {
 	after := r.URL.Query().Get("after")
-	rows, err := a.db.QueryContext(r.Context(), "SELECT id,kind,created_at,finished FROM captures WHERE account_id=? AND deleted_at IS NULL AND id>? ORDER BY id LIMIT 100", account(r), after)
+	rows, err := a.db.QueryContext(r.Context(), `SELECT id,kind,created_at,finished,latitude,longitude,horizontal_accuracy_m,location_timestamp
+		FROM captures WHERE account_id=? AND deleted_at IS NULL AND id>? ORDER BY id LIMIT 100`, account(r), after)
 	if err != nil {
 		failure(w, 503, "Unavailable")
 		return
 	}
 	defer rows.Close()
 	type capture struct {
-		ID       string `json:"id"`
-		Kind     string `json:"kind"`
-		Created  int64  `json:"created_at"`
-		Finished bool   `json:"finished"`
+		ID       string           `json:"id"`
+		Kind     string           `json:"kind"`
+		Created  int64            `json:"created_at"`
+		Finished bool             `json:"finished"`
+		Location *captureLocation `json:"location,omitempty"`
 	}
 	list := []capture{}
 	for rows.Next() {
 		var c capture
-		if rows.Scan(&c.ID, &c.Kind, &c.Created, &c.Finished) != nil {
+		var lat, lon, accuracy sql.NullFloat64
+		var timestamp sql.NullInt64
+		if rows.Scan(&c.ID, &c.Kind, &c.Created, &c.Finished, &lat, &lon, &accuracy, &timestamp) != nil {
 			failure(w, 503, "Unavailable")
 			return
 		}
+		c.Location = locationFromDB(lat, lon, accuracy, timestamp)
 		list = append(list, c)
 	}
 	if rows.Err() != nil {
@@ -475,6 +526,13 @@ func (a *api) getCapture(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	var lat, lon, accuracy sql.NullFloat64
+	var timestamp sql.NullInt64
+	if err := a.db.QueryRowContext(r.Context(), "SELECT latitude,longitude,horizontal_accuracy_m,location_timestamp FROM captures WHERE id=?", r.PathValue("id")).Scan(&lat, &lon, &accuracy, &timestamp); err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	location := locationFromDB(lat, lon, accuracy, timestamp)
 	after := -1
 	if s := r.URL.Query().Get("after"); s != "" {
 		n, err := strconv.Atoi(s)
@@ -521,5 +579,5 @@ func (a *api) getCapture(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	jsonResponse(w, 200, map[string]any{"id": r.PathValue("id"), "kind": kind, "objects": list})
+	jsonResponse(w, 200, map[string]any{"id": r.PathValue("id"), "kind": kind, "location": location, "objects": list})
 }

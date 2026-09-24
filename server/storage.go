@@ -50,17 +50,31 @@ func newS3() (*s3Store, error) {
 		}
 	}
 	endpoint := values["S3_ENDPOINT"]
-	u, err := url.Parse(endpoint)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && !(u.Scheme == "http" && os.Getenv("APP_ENV") == "development")) {
+	if !validS3Endpoint(endpoint) {
 		return nil, errors.New("S3_ENDPOINT must be HTTPS (HTTP requires APP_ENV=development)")
 	}
-	client := s3.New(s3.Options{
+	publicEndpoint := env("S3_PUBLIC_ENDPOINT", endpoint)
+	if !validS3Endpoint(publicEndpoint) {
+		return nil, errors.New("S3_PUBLIC_ENDPOINT must be HTTPS (HTTP requires APP_ENV=development)")
+	}
+	options := s3.Options{
 		Region: env("S3_REGION", env("AWS_REGION", "auto")), BaseEndpoint: aws.String(endpoint), UsePathStyle: os.Getenv("S3_PATH_STYLE") == "true",
 		Credentials:                credentials.NewStaticCredentialsProvider(values["S3_ACCESS_KEY_ID"], values["S3_SECRET_ACCESS_KEY"], ""),
 		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
 		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired,
-	})
-	return &s3Store{client: client, signer: s3.NewPresignClient(client), bucket: values["S3_BUCKET"]}, nil
+	}
+	client := s3.New(options)
+	signerClient := client
+	if publicEndpoint != endpoint {
+		options.BaseEndpoint = aws.String(publicEndpoint)
+		signerClient = s3.New(options)
+	}
+	return &s3Store{client: client, signer: s3.NewPresignClient(signerClient), bucket: values["S3_BUCKET"]}, nil
+}
+
+func validS3Endpoint(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	return err == nil && u.Host != "" && (u.Scheme == "https" || (u.Scheme == "http" && os.Getenv("APP_ENV") == "development"))
 }
 func (s *s3Store) upload(ctx context.Context, o object) (signedUpload, error) {
 	p, err := s.signer.PresignPutObject(ctx, &s3.PutObjectInput{

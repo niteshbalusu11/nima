@@ -13,6 +13,13 @@ struct LocalCapture: Identifiable, Equatable, Sendable {
     var thumbnailID: String { "\(accountId)/\(id)/\(min(parts.count, 2))" }
 }
 
+struct CaptureLocation: Codable, Equatable, Sendable {
+    let latitude: Double
+    let longitude: Double
+    let horizontalAccuracyM: Double
+    let timestamp: Int64
+}
+
 struct QueuedObject: Codable, Sendable, Identifiable {
     let id: UUID
     let accountId: String
@@ -26,6 +33,7 @@ struct QueuedObject: Codable, Sendable, Identifiable {
     let duration: Double
     let startTime: Double
     let createdAt: Date
+    let location: CaptureLocation?
     var acknowledged: Bool
     var reservation: Data {
         get throws {
@@ -84,7 +92,8 @@ final class UploadQueue: @unchecked Sendable {
         }
     }
     func enqueue(_ data: Data, accountId: String, captureId: String, captureKind: String,
-                 sequence: Int, kind: String, duration: Double = 0, startTime: Double = 0) throws {
+                 sequence: Int, kind: String, duration: Double = 0, startTime: Double = 0,
+                 location: CaptureLocation? = nil) throws {
         lock.lock(); defer { lock.unlock() }
         guard !deleted.contains("\(accountId)/\(captureId)") else { throw APIError(status: 410, message: "Capture deleted") }
         try checkSpaceLocked(additional: data.count)
@@ -93,7 +102,7 @@ final class UploadQueue: @unchecked Sendable {
                                 sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
                                 md5: Data(Insecure.MD5.hash(data: data)).base64EncodedString(), size: data.count,
                                 duration: duration.isFinite ? duration : 0, startTime: startTime.isFinite ? max(0, startTime) : 0,
-                                createdAt: Date(), acknowledged: false)
+                                createdAt: Date(), location: location, acknowledged: false)
         let staging = root.appendingPathComponent(".tmp-\(item.id.uuidString)")
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         do {
@@ -172,8 +181,8 @@ struct UploadWorker: Sendable {
     let accountId: String
     func send(_ item: QueuedObject) async throws {
         try Task.checkCancellation()
-        struct Capture: Encodable { let kind: String }
-        let _: OK = try await api.request("PUT", "captures/\(item.captureId)", body: API.encode(Capture(kind: item.captureKind)))
+        struct Capture: Encodable { let kind: String; let location: CaptureLocation? }
+        let _: OK = try await api.request("PUT", "captures/\(item.captureId)", body: API.encode(Capture(kind: item.captureKind, location: item.location)))
         struct Reservation: Decodable, Sendable { let acknowledged: Bool; let url: String?; let headers: [String: String]? }
         let signed: Reservation = try await api.request("POST", "captures/\(item.captureId)/objects/reserve", body: item.reservation)
         try Task.checkCancellation()
