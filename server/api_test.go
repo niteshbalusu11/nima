@@ -381,12 +381,21 @@ func TestLiveMediaBeforeStop(t *testing.T) {
 		}
 	}
 	live := filepath.Join(folder, "live-before-stop.mp4")
-	output, err = exec.Command("ffprobe", "-v", "error", "-show_entries", "stream=codec_name,width,height", "-of", "json", live).CombinedOutput()
+	output, err = exec.Command("ffprobe", "-v", "error", "-show_entries", "stream=codec_name,width,height:format=start_time,duration", "-of", "json", live).CombinedOutput()
 	if err != nil {
 		t.Fatalf("ffprobe: %v %s", err, output)
 	}
 	if !bytes.Contains(output, []byte(`"h264"`)) || !bytes.Contains(output, []byte(`"aac"`)) || !bytes.Contains(output, []byte(`"width": 480`)) {
 		t.Fatalf("wrong streams: %s", output)
+	}
+	var timing struct {
+		Format struct {
+			Start    float64 `json:"start_time,string"`
+			Duration float64 `json:"duration,string"`
+		}
+	}
+	if err = json.Unmarshal(output, &timing); err != nil || timing.Format.Start < -0.05 || timing.Format.Start > 0.05 || timing.Format.Duration <= 0 || timing.Format.Duration > 7 {
+		t.Fatalf("live video timeline must start at zero: %v %s", err, output)
 	}
 	output, err = exec.Command("ffmpeg", "-v", "error", "-i", live, "-f", "null", "-").CombinedOutput()
 	if err != nil || len(bytes.TrimSpace(output)) != 0 {
