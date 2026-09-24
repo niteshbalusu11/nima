@@ -107,6 +107,8 @@ Protect backups as user data. They contain account/media metadata, not the media
 
 ## API
 
+The nearby-sharing foundation adds device registration and directional peer consent. See [the protocol and verification guide](../docs/nearby-identities.md) for the new routes, migration 5, session compatibility, and sharing-only revocation semantics. Delegated media uploads are not enabled yet.
+
 - Public: `GET /health`, `POST /enroll`.
 - Authenticated: `GET/PATCH /me`, `PUT /captures/{id}`, `POST /captures/{id}/objects/reserve`, `POST /captures/{id}/objects/ack`, `GET /captures`, `GET /captures/{id}`, `DELETE /captures/{id}`.
 - Admin only: `POST /invites` with `{}`; returns `{token, expires_at}`. Clients cannot choose role, account, or expiry. Limited to ten creations per admin per minute, with no total allowance.

@@ -72,6 +72,8 @@ Requires `ffmpeg`/`ffprobe`. This uses the **app's actual Swift encoder, disk qu
 
 The upcoming nearby-sharing feature has separate [transport and storage feasibility probes](docs/nearby-feasibility.md), available in Debug builds and through local scripts. Physical offline transfer and production Tigris validation are still pending.
 
+[Device registration and peer consent](docs/nearby-identities.md) now have backend and Swift compatibility checks in `./tools/verify-identities.sh`. With a booted iOS simulator, `./tools/verify-identity-keychain.sh` also checks actual key persistence and isolation in a disposable test app.
+
 ```sh
 xcodebuild -project UploadVideo.xcodeproj -scheme UploadVideo \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build

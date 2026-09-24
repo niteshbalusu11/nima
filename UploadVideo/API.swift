@@ -7,6 +7,7 @@ struct Session: Codable, Sendable {
     let token: String
     let accountId: String
     var role: AccountRole
+    var deviceId: String? = nil
 }
 struct Profile: Codable, Sendable {
     var id = ""

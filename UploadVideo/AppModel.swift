@@ -85,6 +85,17 @@ final class AppModel: ObservableObject {
         camera?.suspend()
         stopUploads()
     }
+    #if DEBUG
+    func registerSharingDevice() async throws {
+        guard let current = session else { throw APIError(status: 401, message: "Sign in first") }
+        let identity = try DeviceIdentity.loadOrCreate(for: current, at: api.baseURL)
+        let device = try await identity.register(using: api, session: current)
+        guard var updated = session, updated.token == current.token else { throw CancellationError() }
+        updated.deviceId = device.id
+        try SessionKeychain.save(updated)
+        session = updated
+    }
+    #endif
     func startScanning() async {
         scanning = true; message = nil
         await startCamera()

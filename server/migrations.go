@@ -44,6 +44,28 @@ ALTER TABLE captures ADD COLUMN location_timestamp INTEGER;
 ALTER TABLE accounts ADD COLUMN super_admin INTEGER NOT NULL DEFAULT 0 CHECK(super_admin IN (0,1));
 ALTER TABLE invites ADD COLUMN super_admin INTEGER NOT NULL DEFAULT 0 CHECK(super_admin IN (0,1));
 `,
+	`
+CREATE TABLE devices (
+ id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
+ signing_public_key TEXT NOT NULL UNIQUE, tls_public_key TEXT NOT NULL UNIQUE,
+ created_at INTEGER NOT NULL, revoked_at INTEGER);
+CREATE INDEX devices_account ON devices(account_id);
+ALTER TABLE sessions ADD COLUMN device_id TEXT REFERENCES devices(id);
+CREATE TABLE device_challenges (
+ session_hash TEXT PRIMARY KEY REFERENCES sessions(hash), nonce TEXT NOT NULL,
+ signing_public_key TEXT NOT NULL, tls_public_key TEXT NOT NULL, expires_at INTEGER NOT NULL);
+CREATE TABLE peer_approvals (
+ id TEXT PRIMARY KEY, sender_device_id TEXT NOT NULL REFERENCES devices(id),
+ recipient_device_id TEXT NOT NULL REFERENCES devices(id), created_at INTEGER NOT NULL,
+ revoked_at INTEGER, CHECK(sender_device_id != recipient_device_id));
+CREATE UNIQUE INDEX peer_approvals_active ON peer_approvals(sender_device_id,recipient_device_id) WHERE revoked_at IS NULL;
+CREATE INDEX peer_approvals_recipient ON peer_approvals(recipient_device_id);
+CREATE TABLE peer_invitations (
+ hash TEXT PRIMARY KEY, sender_device_id TEXT NOT NULL REFERENCES devices(id),
+ recipient_device_id TEXT NOT NULL REFERENCES devices(id), expires_at INTEGER NOT NULL,
+ approval_id TEXT REFERENCES peer_approvals(id), CHECK(sender_device_id != recipient_device_id));
+CREATE INDEX peer_invitations_pair ON peer_invitations(sender_device_id,recipient_device_id);
+`,
 }
 
 // Run before serving requests. The write lock also serializes startup with CLI commands.

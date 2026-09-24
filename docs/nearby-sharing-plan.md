@@ -4,6 +4,8 @@ Status: implementation started with milestone 0, 2026-09-24; see [the feasibilit
 
 ## 1. Outcome and scope
 
+Implementation progress: [device registration and server-side peer consent](nearby-identities.md) are implemented. Milestone 1 still needs production TLS certificates, native recipient approval, and an offline approval cache before its full acceptance gate can pass.
+
 A records video or takes photos. During capture, A independently uploads to its cloud account and sends completed media objects directly to approved nearby phones B, C, and D. Recipients persist their copies and can immediately or later upload missing objects on A's behalf. Different phones may supply different portions; all contributions converge into one capture owned by A.
 
 The release must support this complete recovery path, including A never reconnecting. A radio demo alone is not completion of the feature.

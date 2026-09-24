@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A01D842B7B46ED112BD0000F /* DeviceSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00010 /* DeviceSetupView.swift */; };
+		A01D842B7B46ED112BD0000D /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0000E /* DeviceIdentity.swift */; };
 		A01D842B7B46ED112BD00009 /* NearbyProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0000A /* NearbyProbe.swift */; };
 		A01D842B7B46ED112BD0000B /* NearbyProbeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0000C /* NearbyProbeView.swift */; };
 		566267AA891D1842197B339A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA54C291C542BB61A2311C17 /* ContentView.swift */; };
@@ -28,6 +30,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A01D842B7B46ED112BD00010 /* DeviceSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSetupView.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD0000E /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD0000A /* NearbyProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyProbe.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD0000C /* NearbyProbeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyProbeView.swift; sourceTree = "<group>"; };
 		430C07E962E2702AE7F52144 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
@@ -105,6 +109,8 @@
 				A01D842B7B46ED112BD00002 /* AuthView.swift */,
 				A01D842B7B46ED112BD00004 /* InviteView.swift */,
 				A01D842B7B46ED112BD00008 /* GalleryView.swift */,
+				A01D842B7B46ED112BD0000E /* DeviceIdentity.swift */,
+				A01D842B7B46ED112BD00010 /* DeviceSetupView.swift */,
 				A01D842B7B46ED112BD0000A /* NearbyProbe.swift */,
 				A01D842B7B46ED112BD0000C /* NearbyProbeView.swift */,
 				A01D842B7B46ED112BD00006 /* CaptureLibrary.swift */,
@@ -187,6 +193,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A01D842B7B46ED112BD0000D /* DeviceIdentity.swift in Sources */,
+				A01D842B7B46ED112BD0000F /* DeviceSetupView.swift in Sources */,
 				A01D842B7B46ED112BD00009 /* NearbyProbe.swift in Sources */,
 				A01D842B7B46ED112BD0000B /* NearbyProbeView.swift in Sources */,
 				6506EFC50074C363C58F7C7A /* UploadVideoApp.swift in Sources */,
