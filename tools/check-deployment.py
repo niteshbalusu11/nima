@@ -39,7 +39,7 @@ if args.action == 'enroll':
     invite = args.invite.read_text().strip().removeprefix('uploadvideo:invite:')
     status, session = call('POST', '/enroll', {'token': invite})
     assert status == 201, f'enrollment: {status}'
-    assert set(session) == {'token', 'account_id'}, 'unexpected enrollment response; sessions have no expiry'
+    assert set(session) == {'token', 'account_id', 'role'}, 'unexpected enrollment response; sessions have no expiry'
     session_path.write_text(json.dumps(session))
     status, _ = call('POST', '/enroll', {'token': invite})
     assert status == 401, f'invite reuse accepted: {status}'

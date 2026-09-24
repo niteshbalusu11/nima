@@ -27,10 +27,13 @@ func openDB(path string) (*sql.DB, error) {
 	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
  CREATE TABLE IF NOT EXISTS accounts (
  id TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 1,
+ role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('member','admin')),
  name TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', signal_username TEXT NOT NULL DEFAULT '',
  created_at INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS invites (
  hash TEXT PRIMARY KEY, account_id TEXT REFERENCES accounts(id), expires_at INTEGER NOT NULL,
+ role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('member','admin')),
+ created_by TEXT REFERENCES accounts(id),
  consumed_at INTEGER);
  CREATE TABLE IF NOT EXISTS sessions (
  hash TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
@@ -66,16 +69,32 @@ func randomBytes(n int) []byte {
 func digest(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
 func newID() string          { return hex.EncodeToString(randomBytes(16)) }
 
-func issueInvite(db *sql.DB, account string, ttl time.Duration) (string, error) {
+type invitation struct {
+	Token     string `json:"token"`
+	ExpiresAt int64  `json:"expires_at"`
+}
+
+func issueInvite(db *sql.DB, account string, ttl time.Duration, admin bool, createdBy string) (invitation, error) {
+	if admin && (account != "" || createdBy != "") {
+		return invitation{}, fmt.Errorf("--admin creates a new admin account through the CLI only")
+	}
+	role := "member"
+	if admin {
+		role = "admin"
+	}
 	var target any
 	if account != "" {
 		var active int
-		if err := db.QueryRow("SELECT active FROM accounts WHERE id=?", account).Scan(&active); err != nil || active != 1 {
-			return "", fmt.Errorf("account is missing or revoked")
+		if err := db.QueryRow("SELECT active,role FROM accounts WHERE id=?", account).Scan(&active, &role); err != nil || active != 1 {
+			return invitation{}, fmt.Errorf("account is missing or revoked")
 		}
 		target = account
 	}
-	token := secret()
-	_, err := db.Exec("INSERT INTO invites(hash,account_id,expires_at) VALUES(?,?,?)", digest(token), target, time.Now().Add(ttl).Unix())
-	return token, err
+	var issuer any
+	if createdBy != "" {
+		issuer = createdBy
+	}
+	invite := invitation{Token: secret(), ExpiresAt: time.Now().Add(ttl).Unix()}
+	_, err := db.Exec("INSERT INTO invites(hash,account_id,expires_at,role,created_by) VALUES(?,?,?,?,?)", digest(invite.Token), target, invite.ExpiresAt, role, issuer)
+	return invite, err
 }

@@ -56,6 +56,7 @@ func run() error {
 	case "invite":
 		flags := flag.NewFlagSet("invite", flag.ExitOnError)
 		account := flags.String("account", "", "existing account for a replacement device")
+		admin := flags.Bool("admin", false, "invite a new admin; cannot be combined with --account")
 		out := flags.String("out", "invite.png", "private QR image path")
 		textOut := flags.String("text-out", "", "optional private file containing QR text, for local testing")
 		ttl := flags.Duration("ttl", 24*time.Hour, "invite lifetime")
@@ -63,11 +64,11 @@ func run() error {
 		if *ttl <= 0 {
 			return fmt.Errorf("ttl must be positive")
 		}
-		token, err := issueInvite(db, *account, *ttl)
+		invite, err := issueInvite(db, *account, *ttl, *admin, "")
 		if err != nil {
 			return err
 		}
-		if err = qrcode.WriteFile("uploadvideo:invite:"+token, qrcode.Medium, 512, *out); err != nil {
+		if err = qrcode.WriteFile("uploadvideo:invite:"+invite.Token, qrcode.Medium, 512, *out); err != nil {
 			return err
 		}
 		if *textOut != "" {
@@ -75,7 +76,7 @@ func run() error {
 			if e != nil {
 				return e
 			}
-			_, e = f.WriteString("uploadvideo:invite:" + token)
+			_, e = f.WriteString("uploadvideo:invite:" + invite.Token)
 			closeErr := f.Close()
 			if e != nil {
 				return e
@@ -87,18 +88,18 @@ func run() error {
 		fmt.Printf("Invite QR written to %s (expires in %s)\n", *out, *ttl)
 		return nil
 	case "accounts":
-		rows, e := db.Query("SELECT id,name,active FROM accounts ORDER BY created_at DESC")
+		rows, e := db.Query("SELECT id,name,active,role FROM accounts ORDER BY created_at DESC")
 		if e != nil {
 			return e
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var id, name string
+			var id, name, role string
 			var active bool
-			if e = rows.Scan(&id, &name, &active); e != nil {
+			if e = rows.Scan(&id, &name, &active, &role); e != nil {
 				return e
 			}
-			fmt.Printf("%s  active=%t  %s\n", id, active, name)
+			fmt.Printf("%s  role=%s  active=%t  %s\n", id, role, active, name)
 		}
 		return rows.Err()
 	case "revoke":

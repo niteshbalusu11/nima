@@ -30,6 +30,7 @@ type api struct {
 }
 type profile struct {
 	ID             string `json:"id"`
+	Role           string `json:"role"`
 	Name           string `json:"name"`
 	Email          string `json:"email"`
 	SignalUsername string `json:"signal_username"`
@@ -94,6 +95,7 @@ func (a *api) handler() http.Handler {
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /me", a.me)
 	protected.HandleFunc("PATCH /me", a.updateMe)
+	protected.HandleFunc("POST /invites", a.createInvite)
 	protected.HandleFunc("PUT /captures/{id}", a.createCapture)
 	protected.HandleFunc("POST /captures/{id}/objects/reserve", a.reserve)
 	protected.HandleFunc("POST /captures/{id}/objects/ack", a.ack)
@@ -129,13 +131,12 @@ type inviteLimiter struct {
 	entries map[string]attempt
 }
 
-func (l *inviteLimiter) allow(addr string) bool {
+func (l *inviteLimiter) allow(key string) bool {
 	l.Lock()
 	defer l.Unlock()
 	if l.entries == nil {
 		l.entries = map[string]attempt{}
 	}
-	host, _, _ := net.SplitHostPort(addr)
 	now := time.Now()
 	for k, v := range l.entries {
 		if now.Sub(v.start) > time.Minute {
@@ -145,16 +146,17 @@ func (l *inviteLimiter) allow(addr string) bool {
 	if len(l.entries) > 4096 {
 		return false
 	}
-	v := l.entries[host]
+	v := l.entries[key]
 	if v.start.IsZero() {
 		v.start = now
 	}
 	v.count++
-	l.entries[host] = v
+	l.entries[key] = v
 	return v.count <= 10
 }
 func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
-	if !a.limiter.allow(r.RemoteAddr) {
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if !a.limiter.allow("enroll:" + host) {
 		failure(w, 429, "Try again shortly")
 		return
 	}
@@ -175,7 +177,8 @@ func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	var existing sql.NullString
-	err = tx.QueryRow(`UPDATE invites SET consumed_at=? WHERE hash=? AND consumed_at IS NULL AND expires_at>? RETURNING account_id`, time.Now().Unix(), digest(input.Token), time.Now().Unix()).Scan(&existing)
+	var role string
+	err = tx.QueryRow(`UPDATE invites SET consumed_at=? WHERE hash=? AND consumed_at IS NULL AND expires_at>? RETURNING account_id,role`, time.Now().Unix(), digest(input.Token), time.Now().Unix()).Scan(&existing, &role)
 	if err != nil {
 		failure(w, 401, "Invalid invite")
 		return
@@ -183,10 +186,10 @@ func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
 	id := existing.String
 	if !existing.Valid {
 		id = newID()
-		_, err = tx.Exec("INSERT INTO accounts(id,created_at) VALUES(?,?)", id, time.Now().Unix())
+		_, err = tx.Exec("INSERT INTO accounts(id,created_at,role) VALUES(?,?,?)", id, time.Now().Unix(), role)
 	} else {
 		var active int
-		err = tx.QueryRow("SELECT active FROM accounts WHERE id=?", id).Scan(&active)
+		err = tx.QueryRow("SELECT active,role FROM accounts WHERE id=?", id).Scan(&active, &role)
 		if active != 1 {
 			failure(w, 401, "Invalid invite")
 			return
@@ -205,11 +208,36 @@ func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
 		failure(w, 503, "Unavailable")
 		return
 	}
-	jsonResponse(w, 201, map[string]any{"token": token, "account_id": id})
+	jsonResponse(w, 201, map[string]any{"token": token, "account_id": id, "role": role})
+}
+func (a *api) createInvite(w http.ResponseWriter, r *http.Request) {
+	var role string
+	if err := a.db.QueryRowContext(r.Context(), "SELECT role FROM accounts WHERE id=?", account(r)).Scan(&role); err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	if role != "admin" {
+		failure(w, 403, "Admins only")
+		return
+	}
+	var input struct{}
+	if !decode(w, r, &input) {
+		return
+	}
+	if !a.limiter.allow("issue:" + account(r)) {
+		failure(w, 429, "Try again shortly")
+		return
+	}
+	invite, err := issueInvite(a.db, "", 24*time.Hour, false, account(r))
+	if err != nil {
+		failure(w, 503, "Could not create invite")
+		return
+	}
+	jsonResponse(w, 201, invite)
 }
 func (a *api) me(w http.ResponseWriter, r *http.Request) {
 	var p profile
-	if err := a.db.QueryRowContext(r.Context(), "SELECT id,name,email,signal_username FROM accounts WHERE id=?", account(r)).Scan(&p.ID, &p.Name, &p.Email, &p.SignalUsername); err != nil {
+	if err := a.db.QueryRowContext(r.Context(), "SELECT id,role,name,email,signal_username FROM accounts WHERE id=?", account(r)).Scan(&p.ID, &p.Role, &p.Name, &p.Email, &p.SignalUsername); err != nil {
 		failure(w, 503, "Unavailable")
 		return
 	}

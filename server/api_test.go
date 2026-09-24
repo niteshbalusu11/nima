@@ -96,11 +96,11 @@ func mustStatus(t *testing.T, want, got int, body []byte) {
 }
 func enrollTest(t *testing.T, h *testAPI) (string, string) {
 	t.Helper()
-	invite, err := issueInvite(h.db, "", time.Hour)
+	invite, err := issueInvite(h.db, "", time.Hour, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	status, body := request(t, h.server.URL, "POST", "/enroll", "", map[string]string{"token": invite})
+	status, body := request(t, h.server.URL, "POST", "/enroll", "", map[string]string{"token": invite.Token})
 	mustStatus(t, 201, status, body)
 	var result struct {
 		Token     string
@@ -122,7 +122,7 @@ func makeObject(data []byte, kind string, seq int) object {
 }
 func TestInviteSingleUseConcurrentAndExpiry(t *testing.T) {
 	h := setup(t)
-	invite, err := issueInvite(h.db, "", time.Hour)
+	invite, err := issueInvite(h.db, "", time.Hour, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestInviteSingleUseConcurrentAndExpiry(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 2 {
 		wg.Go(func() {
-			s, _ := request(t, h.server.URL, "POST", "/enroll", "", map[string]string{"token": invite})
+			s, _ := request(t, h.server.URL, "POST", "/enroll", "", map[string]string{"token": invite.Token})
 			statuses <- s
 		})
 	}
@@ -143,8 +143,8 @@ func TestInviteSingleUseConcurrentAndExpiry(t *testing.T) {
 	if counts[201] != 1 || counts[401] != 1 {
 		t.Fatalf("concurrent redemption: %v", counts)
 	}
-	expired, _ := issueInvite(h.db, "", -time.Hour)
-	s, b := request(t, h.server.URL, "POST", "/enroll", "", map[string]string{"token": expired})
+	expired, _ := issueInvite(h.db, "", -time.Hour, false, "")
+	s, b := request(t, h.server.URL, "POST", "/enroll", "", map[string]string{"token": expired.Token})
 	mustStatus(t, 401, s, b)
 	var count int
 	h.db.QueryRow("SELECT COUNT(*) FROM accounts").Scan(&count)
@@ -207,8 +207,8 @@ func TestOwnershipProfilesRevocationAndRecovery(t *testing.T) {
 	}
 	s, b = request(t, h.server.URL, "GET", "/me", token, nil)
 	mustStatus(t, 401, s, b)
-	replacement, _ := issueInvite(h.db, owner, time.Hour)
-	s, b = request(t, h.server.URL, "POST", "/enroll", "", map[string]string{"token": replacement})
+	replacement, _ := issueInvite(h.db, owner, time.Hour, false, "")
+	s, b = request(t, h.server.URL, "POST", "/enroll", "", map[string]string{"token": replacement.Token})
 	mustStatus(t, 201, s, b)
 	var session struct{ Token string }
 	json.Unmarshal(b, &session)
@@ -356,7 +356,7 @@ func TestLiveMediaBeforeStop(t *testing.T) {
 	token, account := enrollTest(t, h)
 	folder := t.TempDir()
 	sessionPath := filepath.Join(folder, "session.json")
-	data, _ := json.Marshal(map[string]any{"token": token, "account_id": account})
+	data, _ := json.Marshal(map[string]any{"token": token, "account_id": account, "role": "member"})
 	if err = os.WriteFile(sessionPath, data, 0600); err != nil {
 		t.Fatal(err)
 	}
