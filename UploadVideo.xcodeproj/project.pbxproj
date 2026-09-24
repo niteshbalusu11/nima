@@ -261,7 +261,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				MARKETING_VERSION = 0.1.0;
-				INFOPLIST_KEY_CFBundleDisplayName = Witness;
+				INFOPLIST_KEY_CFBundleDisplayName = Nima;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Capture photos and videos to upload securely.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio with videos you capture.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -349,7 +349,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				MARKETING_VERSION = 0.1.0;
-				INFOPLIST_KEY_CFBundleDisplayName = Witness;
+				INFOPLIST_KEY_CFBundleDisplayName = Nima;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Capture photos and videos to upload securely.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio with videos you capture.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

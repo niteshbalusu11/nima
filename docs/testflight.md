@@ -2,8 +2,8 @@
 
 ## App identity
 
-- iPhone display name: Witness.
-- App Store Connect listing: Witness: Live Capture (the exact name Witness was unavailable).
+- iPhone display name: Nima.
+- App Store Connect listing: Nima: Live Capture (the exact name Nima was unavailable).
 - Organization: ProData Platform Inc, team `GNQ3HY2357`.
 - Bundle ID: `com.prodata.uploadvideo`.
 - App Store Connect app ID: `6815790780`; SKU: `upload-video-ios`.
@@ -45,7 +45,7 @@ The archive includes the app icon, camera/microphone/Photos permission descripti
 
 After Apple processes the upload, add the build to an internal group and select the intended existing App Store Connect users. Apple permits up to 100 internal testers with eligible team roles. Internal TestFlight builds do not require external beta review and are available for up to 90 days. TestFlight access does not bypass the app's single-use invite enrollment.
 
-Install TestFlight on the iPhone using the invited Apple Account, accept the TestFlight invitation, and install Witness. Issue a fresh app invite using the [server instructions](../server/README.md), then scan it in Witness. Keep invite QR files and account credentials out of source control.
+Install TestFlight on the iPhone using the invited Apple Account, accept the TestFlight invitation, and install Nima. Issue a fresh app invite using the [server instructions](../server/README.md), then scan it in Nima. Keep invite QR files and account credentials out of source control.
 
 Follow the [physical-device checklist](device-checklist.md), starting with live video/photo upload, retrieval before Stop, Photos saving, and offline recovery. Distribution readiness does not establish field readiness: physical-device capture/cellular/thermal testing and app-level media encryption remain outstanding. Local media retention is capped at 3 GiB without automatic cleanup.
 
