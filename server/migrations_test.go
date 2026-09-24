@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -55,7 +56,7 @@ func TestMigrationsAdoptCurrentUnversionedDatabase(t *testing.T) {
 	if err = migrate(db, migrations); err != nil {
 		t.Fatal(err)
 	}
-	if databaseVersion(t, db) != 1 {
+	if databaseVersion(t, db) != len(migrations) {
 		t.Fatal("current schema not adopted")
 	}
 	var id string
@@ -74,20 +75,20 @@ func TestMigrationsUpgradeRollbackAndNewerVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	steps := append(append([]string{}, migrations...), "ALTER TABLE accounts ADD COLUMN test_note TEXT NOT NULL DEFAULT '';", "INVALID SQL;")
-	if err = migrate(db, steps); err == nil || !strings.Contains(err.Error(), "migration 3") {
+	if err = migrate(db, steps); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("migration %d", len(migrations)+2)) {
 		t.Fatalf("expected migration failure: %v", err)
 	}
-	if databaseVersion(t, db) != 1 {
+	if databaseVersion(t, db) != len(migrations) {
 		t.Fatal("failed batch advanced schema version")
 	}
 	if _, err = db.Exec("SELECT test_note FROM accounts"); err == nil {
 		t.Fatal("failed batch kept partial schema")
 	}
-	steps = steps[:2]
+	steps = steps[:len(migrations)+1]
 	if err = migrate(db, steps); err != nil {
 		t.Fatal(err)
 	}
-	if databaseVersion(t, db) != 2 {
+	if databaseVersion(t, db) != len(migrations)+1 {
 		t.Fatal("upgrade not versioned")
 	}
 	var role, note string
@@ -100,7 +101,7 @@ func TestMigrationsUpgradeRollbackAndNewerVersion(t *testing.T) {
 	if err = migrate(db, migrations); err == nil || !strings.Contains(err.Error(), "newer") {
 		t.Fatalf("old binary accepted newer schema: %v", err)
 	}
-	if databaseVersion(t, db) != 2 {
+	if databaseVersion(t, db) != len(migrations)+1 {
 		t.Fatal("old binary changed newer schema")
 	}
 }

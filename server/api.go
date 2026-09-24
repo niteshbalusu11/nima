@@ -102,6 +102,7 @@ func (a *api) handler() http.Handler {
 	protected.HandleFunc("POST /captures/{id}/finish", a.finish)
 	protected.HandleFunc("GET /captures", a.listCaptures)
 	protected.HandleFunc("GET /captures/{id}", a.getCapture)
+	protected.HandleFunc("DELETE /captures/{id}", a.deleteCapture)
 	mux.Handle("/", a.auth(protected))
 	return mux
 }
@@ -267,9 +268,14 @@ func (a *api) updateMe(w http.ResponseWriter, r *http.Request) {
 }
 func (a *api) owned(w http.ResponseWriter, r *http.Request) (string, bool) {
 	var kind string
-	err := a.db.QueryRowContext(r.Context(), "SELECT kind FROM captures WHERE id=? AND account_id=?", r.PathValue("id"), account(r)).Scan(&kind)
+	var deleted sql.NullInt64
+	err := a.db.QueryRowContext(r.Context(), "SELECT kind,deleted_at FROM captures WHERE id=? AND account_id=?", r.PathValue("id"), account(r)).Scan(&kind, &deleted)
 	if err != nil {
 		failure(w, 404, "Not found")
+		return "", false
+	}
+	if deleted.Valid {
+		failure(w, 410, "Capture deleted")
 		return "", false
 	}
 	return kind, true
@@ -332,6 +338,16 @@ func (a *api) reserve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+	// Serialize reservations with deletion, including signing the last upload URL.
+	var deleted sql.NullInt64
+	if err = tx.QueryRow("SELECT deleted_at FROM captures WHERE id=?", o.CaptureID).Scan(&deleted); err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	if deleted.Valid {
+		failure(w, 410, "Capture deleted")
+		return
+	}
 	old, err := scanObject(tx.QueryRow("SELECT "+objectColumns+" FROM objects WHERE capture_id=? AND sequence=?", o.CaptureID, o.Sequence))
 	if err == nil {
 		if old.SHA256 != o.SHA256 || old.MD5 != o.MD5 || old.Size != o.Size || old.Kind != o.Kind || old.Duration != o.Duration || old.StartTime != o.StartTime {
@@ -341,7 +357,7 @@ func (a *api) reserve(w http.ResponseWriter, r *http.Request) {
 		o = old
 	} else if errors.Is(err, sql.ErrNoRows) {
 		var used int64
-		if err = tx.QueryRow("SELECT COALESCE(SUM(o.size),0) FROM objects o JOIN captures c ON c.id=o.capture_id WHERE c.account_id=?", account(r)).Scan(&used); err != nil {
+		if err = tx.QueryRow("SELECT COALESCE(SUM(o.size),0) FROM objects o JOIN captures c ON c.id=o.capture_id WHERE c.account_id=? AND c.deleted_at IS NULL", account(r)).Scan(&used); err != nil {
 			failure(w, 503, "Unavailable")
 			return
 		}
@@ -360,17 +376,20 @@ func (a *api) reserve(w http.ResponseWriter, r *http.Request) {
 		failure(w, 503, "Unavailable")
 		return
 	}
+	var signed signedUpload
+	if !o.Acknowledged {
+		signed, err = a.store.upload(r.Context(), o)
+		if err != nil {
+			failure(w, 503, "Storage unavailable")
+			return
+		}
+	}
 	if err = tx.Commit(); err != nil {
 		failure(w, 503, "Unavailable")
 		return
 	}
 	if o.Acknowledged {
 		jsonResponse(w, 200, map[string]any{"acknowledged": true})
-		return
-	}
-	signed, err := a.store.upload(r.Context(), o)
-	if err != nil {
-		failure(w, 503, "Storage unavailable")
 		return
 	}
 	jsonResponse(w, 200, map[string]any{"acknowledged": false, "url": signed.URL, "headers": signed.Headers})
@@ -424,7 +443,7 @@ func (a *api) finish(w http.ResponseWriter, r *http.Request) {
 }
 func (a *api) listCaptures(w http.ResponseWriter, r *http.Request) {
 	after := r.URL.Query().Get("after")
-	rows, err := a.db.QueryContext(r.Context(), "SELECT id,kind,created_at,finished FROM captures WHERE account_id=? AND id>? ORDER BY id LIMIT 100", account(r), after)
+	rows, err := a.db.QueryContext(r.Context(), "SELECT id,kind,created_at,finished FROM captures WHERE account_id=? AND deleted_at IS NULL AND id>? ORDER BY id LIMIT 100", account(r), after)
 	if err != nil {
 		failure(w, 503, "Unavailable")
 		return

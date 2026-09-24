@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS accounts (
  object_key TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL, md5 TEXT NOT NULL, size INTEGER NOT NULL,
  duration REAL NOT NULL, start_time REAL NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0,
  PRIMARY KEY (capture_id, sequence));
+`, `
+ALTER TABLE captures ADD COLUMN deleted_at INTEGER;
+CREATE INDEX captures_deleted ON captures(deleted_at) WHERE deleted_at IS NOT NULL;
 `,
 }
 

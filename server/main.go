@@ -131,6 +131,7 @@ func run() error {
 		srv := &http.Server{Addr: env("LISTEN_ADDR", "127.0.0.1:8080"), Handler: app.handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
+		go app.cleanDeletedCaptures(ctx)
 		go func() {
 			<-ctx.Done()
 			deadline, cancel := context.WithTimeout(context.Background(), 10*time.Second)

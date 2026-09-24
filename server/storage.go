@@ -17,6 +17,8 @@ import (
 	"github.com/aws/smithy-go"
 )
 
+const uploadURLLifetime = 2 * time.Minute
+
 type signedUpload struct {
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers"`
@@ -25,6 +27,7 @@ type objectStore interface {
 	upload(context.Context, object) (signedUpload, error)
 	verify(context.Context, object) (bool, error)
 	download(context.Context, string) (string, error)
+	remove(context.Context, string) error
 }
 type s3Store struct {
 	client *s3.Client
@@ -63,7 +66,7 @@ func (s *s3Store) upload(ctx context.Context, o object) (signedUpload, error) {
 	p, err := s.signer.PresignPutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(o.Key), ContentLength: aws.Int64(o.Size),
 		ContentType: aws.String(o.contentType()), ContentMD5: aws.String(o.MD5), IfNoneMatch: aws.String("*"),
-	}, func(p *s3.PresignOptions) { p.Expires = 2 * time.Minute })
+	}, func(p *s3.PresignOptions) { p.Expires = uploadURLLifetime })
 	if err != nil {
 		return signedUpload{}, err
 	}
@@ -105,4 +108,9 @@ func (s *s3Store) download(ctx context.Context, key string) (string, error) {
 		return "", err
 	}
 	return p.URL, nil
+}
+
+func (s *s3Store) remove(ctx context.Context, key string) error {
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
+	return err
 }

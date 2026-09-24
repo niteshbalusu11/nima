@@ -23,7 +23,8 @@ import (
 
 type memoryStore struct {
 	sync.Mutex
-	data map[string][]byte
+	data      map[string][]byte
+	removeErr error
 }
 
 func (s *memoryStore) upload(_ context.Context, o object) (signedUpload, error) {
@@ -41,6 +42,16 @@ func (s *memoryStore) verify(_ context.Context, o object) (bool, error) {
 }
 func (s *memoryStore) download(_ context.Context, key string) (string, error) {
 	return "https://example.invalid/" + key, nil
+}
+
+func (s *memoryStore) remove(_ context.Context, key string) error {
+	s.Lock()
+	defer s.Unlock()
+	if s.removeErr != nil {
+		return s.removeErr
+	}
+	delete(s.data, key)
+	return nil
 }
 
 type testAPI struct {
@@ -339,6 +350,34 @@ func TestS3ConditionalUploadAndRecovery(t *testing.T) {
 	private.Body.Close()
 	if private.StatusCode < 400 {
 		t.Fatal("bucket publicly readable")
+	}
+
+	for range 2 {
+		s, b = request(t, h.server.URL, "DELETE", "/captures/"+id, token, nil)
+		mustStatus(t, 202, s, b)
+	}
+	removed, err := http.Get(result.Objects[0].URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed.Body.Close()
+	if removed.StatusCode != 404 {
+		t.Fatalf("deleted object still readable: %d", removed.StatusCode)
+	}
+	// A previously signed PUT can arrive after Delete; the durable sweep removes it.
+	if s = put(); s != 200 {
+		t.Fatalf("late PUT: %d", s)
+	}
+	if err = (&api{db: h.db, store: store}).cleanDeleted(context.Background(), time.Now().Add(deletionGrace+time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	removed, err = http.Get(result.Objects[0].URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed.Body.Close()
+	if removed.StatusCode != 404 {
+		t.Fatalf("late upload survived: %d", removed.StatusCode)
 	}
 }
 

@@ -89,10 +89,16 @@ Protect backups as user data. They contain account/media metadata, not the media
 ## API
 
 - Public: `GET /health`, `POST /enroll`.
-- Authenticated: `GET/PATCH /me`, `PUT /captures/{id}`, `POST /captures/{id}/objects/reserve`, `POST /captures/{id}/objects/ack`, `GET /captures`, `GET /captures/{id}`.
+- Authenticated: `GET/PATCH /me`, `PUT /captures/{id}`, `POST /captures/{id}/objects/reserve`, `POST /captures/{id}/objects/ack`, `GET /captures`, `GET /captures/{id}`, `DELETE /captures/{id}`.
 - Admin only: `POST /invites` with `{}`; returns `{token, expires_at}`. Clients cannot choose role, account, or expiry. Limited to ten creations per admin per minute, with no total allowance.
 - Optional: `POST /captures/{id}/finish`; retrieval does not depend on it.
 
 Protected requests check the session token, explicit revocation, active membership and ownership. Enrollment is limited to ten attempts per peer IP per minute; clients behind the same proxy may share that allowance. Objects are capped at 12 MiB and account reservations at 5 GiB. Uploaded data is immutable through conditional PUTs and verified by SHA-256.
 
 For deployment decisions, actual resources and verification results, see [the deployment note](../docs/fly-deployment.md). Official references: [Fly configuration](https://docs.fly.io/reference/configuration/), [volumes](https://docs.fly.io/volumes/overview/), [Tigris](https://docs.fly.io/tigris/).
+
+### Capture deletion
+
+`DELETE /captures/{id}` is owner-only and idempotent, returning `202 {"ok":true}` once SQLite commits the deletion. Admins have no extra media access. It also accepts a new capture ID to cancel a photo/video that has not reached the server yet. Deleted captures disappear from listings and return 410 to their owner on subsequent upload/read requests (404 to anyone else).
+
+Migration 2 adds `captures.deleted_at`. This permanent tombstone prevents a stale upload queue from recreating a capture. Storage removal starts immediately and retries at startup and every 30 seconds. Object keys remain for five minutes to clean up late PUTs signed before deletion (URLs expire after two minutes; the app's upload timeout is 30 seconds). After that window, successful removals also discard object metadata. Failed removals remain queued in SQLite. Deleted objects stop consuming account quota immediately. Use an unversioned private bucket; object version retention is not managed by this pilot.
