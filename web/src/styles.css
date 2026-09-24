@@ -16,12 +16,12 @@ button:disabled { cursor: default; opacity: .55; }
 .invite-page, .camera-page { min-height: 100svh; min-height: 100dvh; }
 .invite-page { background: #0b0c0d; }
 .invite-content { min-height: 100svh; min-height: 100dvh; max-width: 520px; margin: auto; padding: calc(36px + env(safe-area-inset-top)) 28px calc(36px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand img { width: 52px; height: 52px; border-radius: 12px; }
+.invite-brand { animation: appear .45s ease both; }
 .wordmark, .small-wordmark { font-weight: 800; letter-spacing: -.075em; line-height: 1; }
-.wordmark { font-size: clamp(35px, 10vw, 58px); animation: appear .45s ease both; }
-.wordmark-dot, .small-wordmark span { color: #ed553f; }
+.wordmark { font-size: clamp(35px, 10vw, 58px); }
 .invite-bottom { padding-bottom: min(7vh, 60px); animation: rise .45s .1s ease both; }
-.aperture { width: 60px; height: 60px; margin-bottom: 26px; border: 1px solid #434547; border-radius: 50%; display: grid; place-items: center; }
-.aperture span { width: 31px; height: 31px; border: 2px solid #f7f7f5; border-radius: 50%; }
 .invite-bottom h1 { margin: 0 0 28px; font-size: clamp(38px, 10vw, 56px); font-weight: 600; letter-spacing: -.055em; }
 .invite-bottom form { display: grid; gap: 12px; }
 .invite-bottom input, .profile-sheet input { width: 100%; height: 60px; border: 1px solid #424446; border-radius: 13px; outline: none; background: #17191b; color: #fff; padding: 0 18px; font-size: 17px; }
@@ -37,6 +37,8 @@ button:disabled { cursor: default; opacity: .55; }
 .photo-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .16s ease; z-index: 4; }
 .photo-flash.visible { opacity: .72; }
 .camera-header { position: absolute; z-index: 2; top: 0; left: 0; right: 0; padding: calc(17px + env(safe-area-inset-top)) 20px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.camera-brand { gap: 7px; }
+.camera-brand img { width: 28px; height: 28px; border-radius: 6px; }
 .small-wordmark { font-size: 21px; text-shadow: 0 1px 7px #0008; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .cloud-status { min-height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 30px; background: #1118; backdrop-filter: blur(12px); font-size: 12px; font-weight: 600; }
