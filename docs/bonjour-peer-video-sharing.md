@@ -44,6 +44,8 @@ Implementation uses the existing `NWBrowser`/`NWListener`/`NWConnection` APIs av
 
 ## Receiver-assisted cloud upload
 
+The detailed signed-grant format, device/session prerequisites, redemption API, and retry rules are in [Signed upload grants](signed-upload-grants.md).
+
 The receiving phone should also be able to upload the fragments it saved into the sender's existing cloud capture. Keep the bucket and S3 credentials on the Go server. A presigned PUT URL is a short-lived bearer authorization for one object, not a true single-use credential; sending one at recording time would also fail if the receiver remains offline past its expiry. The app sends a **signed relay grant**, not a bucket secret or an S3 URL.
 
 1. **Create a grant offline.** Give each installation a separate device signing key whose public half is registered with the Go API. At recording start, the sender signs a canonical grant containing the source account/device ID, capture ID, approved recipient device ID, upload-only scope, random nonce, expiration, and a bounded size allowance. If multiple peers are selected, create a grant for each one. The destination is a server-managed destination ID (initially the existing private Tigris bucket), not an arbitrary URL supplied by a peer.
