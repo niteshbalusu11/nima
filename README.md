@@ -2,7 +2,13 @@
 
 Invite-only native iPhone camera. Scan an invite once, then shoot. Photos upload immediately; video uploads in roughly one-second fragments **while recording**. Optional profile: name, email, Signal username.
 
-SwiftUI/AVFoundation → a small Go API with SQLite → private S3-compatible storage. RustFS locally; R2 in production. App-level encryption is deferred for this pilot. Release builds use HTTPS; local Debug builds permit HTTP.
+SwiftUI/AVFoundation → a small Go API with SQLite → private S3-compatible storage. RustFS locally; Tigris on Fly.io in production. App-level encryption is deferred for this pilot. Release builds use HTTPS; local Debug builds permit HTTP.
+
+## Deployed server
+
+The app points to **https://upload-video-api.fly.dev** by default. The backend is one Go container with one SQLite volume and a private Tigris bucket. See [server/fly.toml](server/fly.toml) and [server instructions](server/README.md).
+
+Redeploy with `./tools/deploy-fly.sh`.
 
 ## Run locally
 
@@ -21,7 +27,7 @@ cd server
 ./uploadvideo invite --out data/invite.png
 ```
 
-Open `UploadVideo.xcodeproj` in Xcode. Run from Xcode with normal signing so Keychain works. The unsigned command-line build below is a compilation check. The simulator can show the UI; a physical iPhone is required for camera/QR testing.
+For local API testing, copy `UploadVideo/Configuration/Local.xcconfig.example` to `Local.xcconfig` and use `http:/$()/127.0.0.1:8080` for the simulator. Open `UploadVideo.xcodeproj` in Xcode. Run from Xcode with normal signing so Keychain works. The unsigned command-line build below is a compilation check. The simulator can show the UI; a physical iPhone is required for camera/QR testing.
 
 For an iPhone on the same Wi-Fi:
 
@@ -54,8 +60,8 @@ xcodebuild -project UploadVideo.xcodeproj -scheme UploadVideo \
 
 ## Before live use
 
-Local integration tests do not exercise a physical camera, device thermal behavior, cellular networking, or R2 itself. Follow [the device checklist](docs/device-checklist.md) before the pilot. Foreground recording only; locking/backgrounding stops capture. Pending uploads resume when the app opens. Completed fragments survive interruption; the current unfinished fragment may be lost on force-quit.
+Local integration tests do not exercise a physical camera, device thermal behavior, cellular networking, or physical-device use of the deployed service. Follow [the device checklist](docs/device-checklist.md) before the pilot. Foreground recording only; locking/backgrounding stops capture. Pending uploads resume when the app opens. Completed fragments survive interruption; the current unfinished fragment may be lost on force-quit.
 
 The app retains both pending and uploaded local media, excluded from iCloud backup, up to 256 MiB with a 100 MiB disk-space floor. It stops recording near that limit. There is no automatic deletion or cleanup UI yet. A long pilot needs retrieval and deliberate cleanup; do not delete the app with pending media. Account storage reservations are capped at 5 GiB server-side.
 
-For R2, deployment, invitations, revocation, backup and retrieval, see [server/README.md](server/README.md). The original decisions remain in [the implementation plan](docs/implementation-plan.md).
+For Fly/Tigris deployment, invitations, revocation, backup and retrieval, see [server/README.md](server/README.md). The original decisions remain in [the implementation plan](docs/implementation-plan.md).

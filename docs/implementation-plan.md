@@ -1,5 +1,7 @@
 # Same-day implementation plan
 
+Deployment update: production now uses one Fly.io container, one SQLite volume, and Tigris. See [fly-deployment.md](fly-deployment.md); references to R2 below record the earlier plan.
+
 September 24, 2026. The implementation now includes the native camera, Go/SQLite API, and local RustFS flow. See [device-checklist.md](device-checklist.md) for verified behavior and remaining device/R2 checks. Target a small supervised pilot today, using private TestFlight when available.
 
 **Required flow: scan invite → record video or take a photo → upload immediately → retrieve the media from another device.** Video upload starts during recording and never depends on pressing Stop. Each photo starts uploading as soon as iOS produces its image data, independently of video finalization.

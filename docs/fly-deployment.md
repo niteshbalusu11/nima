@@ -18,4 +18,30 @@ September 24, 2026. Production hosting is Fly.io with Tigris; this supersedes th
 
 ## Status
 
-Implementation and deployment verification in progress. Final resource identifiers and operating commands will be recorded here once deployed.
+Deployed and verified on September 24, 2026.
+
+| Resource | Value |
+| --- | --- |
+| API | `https://upload-video-api.fly.dev` |
+| Fly app | `upload-video-api` |
+| Machine | `d897350c720928` — exactly one, 512 MB, shared CPU, `ewr` |
+| Volume | `vol_vz83xd18zmll53qv` — `upload_video_data`, 1 GB, encrypted, mounted at `/data` |
+| SQLite | `/data/app.sqlite` |
+| Tigris bucket | `upload-video-api-media` — private |
+| Daily snapshots | Enabled, 14-day retention |
+
+Verified against the deployed service:
+
+- HTTPS health check passes; exactly one Machine and one attached volume.
+- Single-use invite enrollment, saved profile, and rejected anonymous API access.
+- The actual Swift encoder/queue/uploader sent video/audio and a JPEG to Tigris; both were retrieved **before Stop**. FFmpeg decoded the downloaded 480×640 H.264/AAC video successfully.
+- Conditional PUT rejects an overwrite; unsigned object downloads are denied; retrieval reconciles an upload whose acknowledgment was deliberately omitted.
+- After restarting the Machine, the same session, profile, and media metadata remained available.
+- A consistent SQLite backup was copied off the volume, its transfer hash checked, and SQLite integrity/metadata verified.
+- The iOS Release build compiles and embeds the deployed HTTPS URL. Debug defaults to the same server; `Local.xcconfig` can override it for local development.
+
+The first unused 24-hour pilot invite is saved privately at `server/data/fly/pilot-invite.png`. The initial backup is `server/data/fly/initial-backup-2026-09-24.sqlite`. These files, test sessions and provisioning credentials are gitignored.
+
+Redeploy with `./tools/deploy-fly.sh`. See [server/README.md](../server/README.md) for invites, retrieval, and backup commands. The old Caddy/Compose production scaffold was removed; Fly handles HTTPS.
+
+Physical iPhone recording, cellular interruption, long-session/thermal behavior, and TestFlight installation still need device validation. This is a single-instance pilot; deployments and host failures can interrupt the API.

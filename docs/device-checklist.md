@@ -1,6 +1,6 @@
 # Pilot device checks
 
-Local verification on September 24, 2026:
+Verification on September 24, 2026:
 
 - Go race-enabled tests: concurrent invite redemption, expiry, account isolation, profile ownership, revocation/re-enrollment, immutable reservations, missing acknowledgment recovery, size validation, enrollment throttling and SQLite backup restore.
 - RustFS: signed upload/download, denied public access, conditional PUT rejects overwrite, recovery of an unacknowledged object.
@@ -9,7 +9,9 @@ Local verification on September 24, 2026:
 - Builds: Debug simulator and unsigned Release for physical iOS both compile. Release has no HTTP transport exception.
 - Queue: reconstruction after offline capture, account isolation, initialization-before-media ordering, saved originals retained.
 
-These are local tests, not a physical iPhone or R2 sign-off. Before handing out the app:
+- Deployed Fly/Tigris: HTTPS health, invite enrollment, synthetic live video/audio/photo retrieval before Stop, private access, conditional PUT, lost acknowledgment recovery, Machine restart persistence, and downloaded SQLite backup integrity. See [fly-deployment.md](fly-deployment.md).
+
+These checks do not replace physical iPhone validation. Before handing out the app:
 
 1. Set actual signing team, bundle ID and HTTPS API configuration. Install through Xcode first; confirm the intended TestFlight distribution path.
 2. Scan a fresh invite. Relaunch: camera opens directly. Reusing the QR fails. Blank profile works; saved name/email/Signal fields persist.
@@ -19,6 +21,6 @@ These are local tests, not a physical iPhone or R2 sign-off. Before handing out 
 6. Lock/background and return; capture stops honestly. Deny microphone: silent video still uploads. Deny camera: Settings action appears.
 7. Confirm low-storage stops capture visibly and preserves pending files. The pilot retains saved files as well, with a 256 MiB cap.
 8. Revoke an account and confirm new upload/download authorization fails. Previously issued signed URLs expire within two minutes.
-9. Repeat upload, overwrite rejection and retrieval tests against the actual private R2 bucket; restart the real API and verify persistence/backup restore.
+9. Confirm the physical iPhone uses the deployed Fly HTTPS API and uploads to its private Tigris bucket. Server/storage integration, restart persistence and downloaded backup integrity have already passed.
 
-Do not label the pilot ready until physical-device live video/photo upload, retrieval without the source phone, and private R2 access have passed.
+Do not label the pilot ready until physical-device live video/photo upload, retrieval without the source phone, and private Tigris access have passed.

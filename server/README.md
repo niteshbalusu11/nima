@@ -1,108 +1,76 @@
 # Server
 
-One Go process, one SQLite database. RustFS and R2 use the same S3 adapter. Accounts, profiles, hashed invites and hashed sessions remain in SQLite. Storage object names contain only random identifiers.
+Production: **https://upload-video-api.fly.dev**
 
-## Configuration
+One Go container on Fly, one SQLite volume, and one private Tigris bucket. No separate database service or proxy container. RustFS remains available for local development.
 
-`tools/start-local.sh` generates `.env` with random local credentials. See `.env.example` for all settings. If running commands manually:
+## Deploy
 
-```sh
-cd server
-set -a
-source .env
-set +a
-go build -o uploadvideo .
-docker compose up -d
-./uploadvideo init-bucket
-./uploadvideo serve
-```
-
-Local defaults bind to loopback. For a phone, set both the API bind address and storage bind address, and use the Mac's LAN IP in `S3_ENDPOINT`. Presigned URLs use that exact endpoint; never rewrite their hostname after signing. The console stays loopback-only.
-
-The Compose file pins the RustFS image tested here. RustFS documents its [Docker setup](https://docs.rustfs.com/en/installation/container/docker); its S3 compatibility makes it useful for local integration tests. R2 remains a separate release check.
-
-For production, set:
-
-```dotenv
-APP_ENV=production
-API_DOMAIN=your-api-domain.example
-S3_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
-S3_REGION=auto
-S3_BUCKET=your-private-bucket
-S3_PATH_STYLE=false
-S3_ACCESS_KEY_ID=your-r2-access-key
-S3_SECRET_ACCESS_KEY=your-r2-secret
-```
-
-Create a **private** R2 bucket and credentials restricted to that bucket with read/write access. Do not enable public access. The adapter uses conditional PUT, signed Content-MD5 and Content-Length, and server-side SHA-256 verification. R2 compatibility reference: https://developers.cloudflare.com/r2/api/s3/api/ . No browser CORS setup is required for the native app.
-
-Point the domain at the server and allow ports 80/443, then:
+From the repository root:
 
 ```sh
-docker compose -f compose.production.yml up -d --build
+./tools/deploy-fly.sh
 ```
 
-Caddy terminates HTTPS; SQLite uses the named `api-data` volume. Set the iOS Release `API_BASE_URL` to this HTTPS domain. The app includes no storage credentials. Production deployment has been scaffolded, not deployed or validated against R2.
+Configuration lives in [fly.toml](fly.toml): `ewr`, 1 shared CPU, 512 MB memory, a 1 GB volume at `/data`, HTTPS, and `/health` checks. Keep **one Machine**; `--ha=false` prevents an automatic spare. A deploy or restart briefly interrupts the API; the phone's upload queue retries.
 
-## Admin commands
-
-Run against the same `DATABASE_PATH` as the API. In production prefix these with `docker compose -f compose.production.yml exec api`.
+Tigris credentials are Fly secrets, set automatically by `fly storage create -a upload-video-api`. The server reads `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and `BUCKET_NAME`. Nothing secret goes into the app or `fly.toml`. The bucket is private, with two-minute signed URLs. Existing `S3_*` variables still work for local RustFS.
 
 ```sh
-./uploadvideo invite --out data/invite.png
-./uploadvideo accounts
-./uploadvideo invite --account ACCOUNT_ID --out data/replacement.png
-./uploadvideo revoke --account ACCOUNT_ID
-./uploadvideo revoke --session-hash SESSION_HASH
-./uploadvideo backup --out data/backup-2026-09-24.sqlite
+flyctl status -a upload-video-api
+flyctl checks list -a upload-video-api
+flyctl volumes list -a upload-video-api
+flyctl logs -a upload-video-api
 ```
 
-Invites expire after 24 hours by default (`--ttl 2h` to change). Redemption is atomic and single-use. A new invite creates an account unless `--account` binds it to an existing active account. A bound invite adds an independently revocable session; revoke a lost device's session separately. Sessions last seven days. QR images and optional `--text-out` files are bearer secrets: keep them private and hand them out individually.
+## Invitations and accounts
 
-`accounts` lists IDs and optional names to identify the account for retrieval/replacement. Session hashes are in the `sessions` table; raw session tokens are never stored server-side. Account revocation blocks all its sessions and bound invites. A revoked account cannot be re-enrolled with this CLI.
-
-Enrollment allows ten attempts per peer IP per minute. Behind the included reverse proxy, clients share the proxy's allowance; for a small pilot enroll in batches. Forwarded headers are deliberately not trusted. Protected requests check session expiry, revocation, membership and ownership on each call. Already issued signed URLs remain valid for up to two minutes after revocation.
-
-## Retrieve during recording
-
-The app has no gallery yet. Issue a **separate bound invite for the recording account** and redeem it for a local retrieval session. `--text-out` is convenient for a local test; otherwise copy the physical QR's text with a QR reader.
+Run admin commands inside the existing container as `app`. Find its ID with `flyctl machine list -a upload-video-api`.
 
 ```sh
-./uploadvideo invite --account ACCOUNT_ID --out data/retrieval-invite.png --text-out data/retrieval-invite.txt
-python3 ../tools/enroll.py --api http://127.0.0.1:8080 --out data/viewer.session.json
-# Paste the QR text at the hidden prompt.
-python3 ../tools/retrieve.py --session data/viewer.session.json
-python3 ../tools/retrieve.py --session data/viewer.session.json --capture CAPTURE_ID --out ../retrieved/CAPTURE_ID
+flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo invite --out /data/invite.png' -a upload-video-api
+flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo accounts' -a upload-video-api
+flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo invite --account ACCOUNT_ID --out /data/replacement.png' -a upload-video-api
+flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo revoke --account ACCOUNT_ID' -a upload-video-api
 ```
 
-The helper retrieves only that account's captures, verifies hashes, saves JPEGs, and assembles playable fragmented MP4 runs. Missing segments are reported and split into separate files. Run it again for a newer snapshot while recording continues. The server reconciles reserved objects directly with storage, even if the phone disappeared before sending `/ack` or `/finish`.
+Download an invite with `flyctl ssh sftp get /data/invite.png ./invite.png -a upload-video-api -u app`. If this network cannot establish Fly's SSH tunnel, use `tools/fly-download.py` instead. Hand out QR codes individually; each is a secret, expires after 24 hours, and is single-use. An optional `--ttl` changes its lifetime.
 
-## Backup and restore
+Sessions last seven days. `--account` binds a fresh invite to an existing active account, useful for a replacement phone or retrieval helper. A lost device's session can be revoked separately with `revoke --session-hash HASH`. Account revocation blocks all its sessions; previously issued storage URLs expire within two minutes.
 
-`backup` uses SQLite `VACUUM INTO` for a consistent backup even in WAL mode. Protect this file as user data, store backups on your own infrastructure, and back up the media bucket separately. The command does not copy media.
+## Retrieve media
 
-To restore: stop the API, retain the existing database and its WAL/SHM files together, set `DATABASE_PATH` to a **new path** containing the backup, then restart. Do not overwrite a live WAL database. The automated tests restore a backup and authenticate the original session with its persisted profile.
+Issue a separate invite bound to the recording account, then redeem it with `tools/enroll.py` to save a private local session file. Use the deployed API:
+
+```sh
+python3 tools/enroll.py --api https://upload-video-api.fly.dev --out viewer.session.json
+python3 tools/retrieve.py --api https://upload-video-api.fly.dev --session viewer.session.json
+python3 tools/retrieve.py --api https://upload-video-api.fly.dev --session viewer.session.json --capture CAPTURE_ID --out retrieved/CAPTURE_ID
+```
+
+The helper saves JPEGs and playable fragmented MP4 snapshots, even while recording continues. It checks hashes and reports missing sequences. No `/finish` or final upload acknowledgment is required to recover media already in Tigris.
+
+## SQLite backup
+
+Fly takes daily volume snapshots, retained for 14 days. For a consistent SQLite backup that can be copied off the volume:
+
+```sh
+flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo backup --out /data/backup-YYYY-MM-DD.sqlite' -a upload-video-api
+python3 tools/fly-download.py --machine MACHINE_ID /data/backup-YYYY-MM-DD.sqlite ./backup-YYYY-MM-DD.sqlite
+```
+
+Protect backups as user data. They contain account/media metadata, not the media objects themselves. To restore, stop the app, preserve the old database and WAL/SHM files together, and restore to a fresh path before starting. Never overwrite an open SQLite database. This pilot has one database copy on one host; snapshots do not provide high availability.
+
+## Local development
+
+`./tools/start-local.sh` runs the API and RustFS using `server/.env`; see `.env.example`. Point `UploadVideo/Configuration/Local.xcconfig` at the local API to override the app's Fly URL. Run `./tools/verify-local.sh` for the synthetic live-media test, or `cd server && go test -race ./...` for backend tests.
 
 ## API
 
-| Method | Route | Purpose |
-| --- | --- | --- |
-| GET | `/health` | Database/process health; no storage probe |
-| POST | `/enroll` | Consume invite, return independent session |
-| GET/PATCH | `/me` | Own optional profile |
-| PUT | `/captures/{id}` | Idempotently register video/photo |
-| POST | `/captures/{id}/objects/reserve` | Persist immutable object metadata, return two-minute signed PUT |
-| POST | `/captures/{id}/objects/ack` | Verify stored length and SHA-256, then acknowledge |
-| POST | `/captures/{id}/finish` | Optional completion hint; not required or currently sent by the app |
-| GET | `/captures?after=ID` | Own captures, up to 100, ordered by ID |
-| GET | `/captures/{id}?after=SEQUENCE` | Up to 50 objects and authorized downloads; reconcile missing acknowledgments |
+- Public: `GET /health`, `POST /enroll`.
+- Authenticated: `GET/PATCH /me`, `PUT /captures/{id}`, `POST /captures/{id}/objects/reserve`, `POST /captures/{id}/objects/ack`, `GET /captures`, `GET /captures/{id}`.
+- Optional: `POST /captures/{id}/finish`; retrieval does not depend on it.
 
-All except `/health` and `/enroll` require `Authorization: Bearer TOKEN`. The phone never sends this token to storage. Reservations enforce 12 MiB/object, 5 GiB/account including pending reservations, and unique sequence/digest bindings. Two upload workers keep photos independent of video. Retries reserve the same bytes and sequence again; the conditional PUT cannot overwrite an accepted object.
+Protected requests check session expiry/revocation, active membership and ownership. Enrollment is limited to ten attempts per peer IP per minute; clients behind the same proxy may share that allowance. Objects are capped at 12 MiB and account reservations at 5 GiB. Uploaded data is immutable through conditional PUTs and verified by SHA-256.
 
-## Known pilot limits
-
-- Local HTTP is a Debug-only development convenience. App-level encryption and mesh are deferred.
-- No cleanup automation or quota reclaim. Retained local media requires deliberate cleanup after retrieval; pending media must not be deleted.
-- No background camera or guaranteed background transfers. The queue drains on reopening.
-- Completion hints are optional; retrieval works on partial recordings.
-- JSON/request sizes and enrollment attempts are bounded; there is no general-purpose multi-tenant traffic management. Intended for a small supervised pilot.
+For deployment decisions, actual resources and verification results, see [the deployment note](../docs/fly-deployment.md). Official references: [Fly configuration](https://docs.fly.io/reference/configuration/), [volumes](https://docs.fly.io/volumes/overview/), [Tigris](https://docs.fly.io/tigris/).
