@@ -8,6 +8,9 @@ struct ContentView: View {
     @State private var showingProfile = false
     @State private var showingGallery = false
     @State private var shutterClosed = false
+    @State private var statusMessage: String?
+    @State private var statusMessageForLocation = false
+    @State private var statusMessageChangedAt: Date?
     var body: some View {
         Group {
             if model.session == nil { AuthView(model: model) }
@@ -25,6 +28,15 @@ struct ContentView: View {
         .sheet(isPresented: $showingProfile) { ProfileView(model: model) }
         .sheet(isPresented: $showingGallery) { GalleryView(model: model) }
         .onChange(of: showingGallery) { _, value in Task { await model.reviewCaptures(value) } }
+        .onChange(of: uploadStatusText) { _, text in showStatusMessage(text) }
+        .onChange(of: model.locationEnabled) { _, enabled in showStatusMessage(enabled ? "Location on" : "Location off", forLocation: true) }
+    }
+    private func showStatusMessage(_ message: String, forLocation: Bool = false) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            statusMessage = message
+            statusMessageForLocation = forLocation
+            statusMessageChangedAt = Date()
+        }
     }
     private var cameraContent: some View {
         ZStack {
@@ -41,8 +53,9 @@ struct ContentView: View {
                 .sensoryFeedback(.impact, trigger: model.photoPulse)
             VStack {
                 VStack(spacing: 10) {
-                    HStack {
+                    HStack(spacing: 12) {
                         uploadStatus
+                        locationToggle
                         Spacer()
                         if model.session != nil && !model.recording {
                             Button { showingProfile = true } label: { Image(systemName: "person.crop.circle") }
@@ -50,19 +63,20 @@ struct ContentView: View {
                                 .font(.title2)
                         }
                     }
-                    HStack {
-                        Spacer()
-                        Toggle(isOn: Binding(get: { model.locationEnabled }, set: { model.setLocationEnabled($0) })) {
-                            Label("Location", systemImage: model.locationEnabled ? "location.fill" : "location.slash.fill")
-                                .font(.subheadline.weight(.semibold))
+                    Text(statusMessage ?? "")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.yellow)
+                        .opacity(statusMessage == nil ? 0 : 1)
+                        .padding(.leading, statusMessageForLocation ? 60 : 0)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: 20)
+                        .accessibilityHidden(true)
+                        .task(id: statusMessageChangedAt) {
+                            guard statusMessageChangedAt != nil else { return }
+                            try? await Task.sleep(for: .seconds(3))
+                            guard !Task.isCancelled else { return }
+                            withAnimation(.easeInOut(duration: 0.2)) { statusMessage = nil; statusMessageChangedAt = nil }
                         }
-                        .toggleStyle(.switch)
-                        .tint(.green)
-                        .fixedSize()
-                        .padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(.black.opacity(0.8), in: Capsule())
-                        .accessibilityHint("Include location with new photos and videos")
-                    }
                     if model.recording {
                         Text(model.recordingStarted, style: .timer).monospacedDigit()
                             .padding(.horizontal, 12).padding(.vertical, 5).background(.red, in: Capsule())
@@ -70,7 +84,7 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 24).padding(.top, 12)
                 Spacer()
-                if let message = model.message {
+                if let message = model.message, !["Offline", "Upload paused"].contains(message) {
                     Text(message).font(.subheadline.weight(.medium)).padding(10).background(.black.opacity(0.65), in: Capsule())
                 }
                 if model.cameraDenied {
@@ -135,22 +149,39 @@ struct ContentView: View {
             }
         }
     }
+    private var uploadStatusText: String {
+        if model.cloudSymbol == "checkmark.icloud" { return "All uploaded" }
+        if model.cloudSymbol == "icloud.slash" { return model.message == "Offline" ? "Offline" : "Upload paused" }
+        return "Uploading"
+    }
     private var uploadStatus: some View {
         let uploaded = model.cloudSymbol == "checkmark.icloud"
         let paused = model.cloudSymbol == "icloud.slash"
         let color: Color = uploaded ? .green : paused ? .red : .yellow
-        return HStack(spacing: 9) {
-            Image(systemName: uploaded ? "checkmark.icloud.fill" : paused ? "icloud.slash.fill" : "icloud.and.arrow.up.fill")
-                .font(.system(size: 28, weight: .semibold))
-            Text(uploaded ? "All uploaded" : paused ? "Upload paused" : "Uploading")
-                .font(.headline)
-        }
-        .foregroundStyle(uploaded ? .black : .white)
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(uploaded ? color : .black.opacity(0.8), in: Capsule())
-        .overlay(Capsule().strokeBorder(color, lineWidth: 2))
+        return Image(systemName: uploaded ? "checkmark.icloud.fill" : paused ? "icloud.slash.fill" : "icloud.and.arrow.up.fill")
+        .font(.system(size: 28, weight: .semibold))
+        .foregroundStyle(color)
+        .frame(width: 48, height: 48)
+        .background(.black.opacity(0.8), in: Circle())
+        .overlay(Circle().strokeBorder(color, lineWidth: 2))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(uploaded ? "All uploads complete" : paused ? "Upload paused" : "Uploads in progress")
+        .accessibilityLabel(uploaded ? "All uploads complete" : uploadStatusText)
+    }
+    private var locationToggle: some View {
+        let enabled = model.locationEnabled
+        let color: Color = enabled ? .yellow : .gray
+        return Button { model.setLocationEnabled(!enabled) } label: {
+            Image(systemName: enabled ? "location.fill" : "location.slash.fill")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 48, height: 48)
+                .background(.black.opacity(0.8), in: Circle())
+                .overlay(Circle().strokeBorder(color, lineWidth: 2))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Location")
+        .accessibilityValue(enabled ? "On" : "Off")
+        .accessibilityHint("Include location with new photos and videos")
     }
     private var galleryButton: some View {
         Button { showingGallery = true } label: {
