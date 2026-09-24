@@ -32,6 +32,7 @@
 .dash-player-foot button { border: 0; background: transparent; color: #f4f4ef; font-size: 11px; font-weight: 700; }
 .dash-player-foot button:disabled { opacity: .4; }
 .dash-stage-meta { min-height: 60px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #686f6c; font-size: 10px; font-weight: 650; letter-spacing: .08em; }
+.dash-shortcuts { color: #929a96; letter-spacing: 0; white-space: nowrap; }
 .dash-feed { min-width: 0; max-height: calc(100svh - 72px); border-left: 1px solid #27292a; display: flex; flex-direction: column; }
 .dash-feed-head { min-height: 132px; padding: 28px 22px 23px; display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid #252928; }
 .dash-feed-head h2 { margin: 10px 0 0; font-size: 23px; font-weight: 650; letter-spacing: -.045em; }
@@ -84,5 +85,6 @@
   .dash-player-foot { gap: 9px; padding: 0 10px; font-size: 10px; }
   .dash-player-foot span:nth-child(2) { display: none; }
   .dash-stage-meta { min-height: 50px; padding: 0 16px; font-size: 9px; }
+  .dash-shortcuts { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .dash-page *, .dash-login * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

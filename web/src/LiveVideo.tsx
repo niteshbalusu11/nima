@@ -78,8 +78,29 @@ function pause(ms: number, signal: AbortSignal): Promise<void> {
 
 export default function LiveVideo({ captureId, token }: { captureId: string; token: string }) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const userPaused = useRef(false)
   const [parts, setParts] = useState(0)
   const [message, setMessage] = useState('Waiting for video…')
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable], button:not(.dash-feed-row)')) return
+      const video = videoRef.current
+      if (!video) return
+      event.preventDefault()
+      if (video.paused) {
+        userPaused.current = false
+        if (video.buffered.length) void video.play().then(() => setMessage('Playing uploaded video')).catch(() => setMessage('Press play to watch'))
+      } else {
+        userPaused.current = true
+        video.pause()
+        setMessage('Paused')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   useEffect(() => {
     const video = videoRef.current
@@ -132,13 +153,13 @@ export default function LiveVideo({ captureId, token }: { captureId: string; tok
               count++
               lastReceivedAt = Date.now()
               setParts(count)
-              setMessage('Playing uploaded video')
+              setMessage(userPaused.current ? 'Paused' : 'Playing uploaded video')
               if (video.buffered.length) {
                 const end = video.buffered.end(video.buffered.length - 1)
                 if (video.currentTime < video.buffered.start(0) || end - video.currentTime > 8) {
                   video.currentTime = Math.max(video.buffered.start(0), end - 2)
                 }
-                if (!started || autoPaused) {
+                if (!userPaused.current && (!started || autoPaused)) {
                   started = true
                   autoPaused = false
                   void video.play().catch(() => setMessage('Press play to watch'))
@@ -152,7 +173,7 @@ export default function LiveVideo({ captureId, token }: { captureId: string; tok
           }
           if (!count) setMessage('Waiting for video…')
           if (count && Date.now() - lastReceivedAt > 3500) {
-            setMessage(detail.finished ? 'Recording finished' : 'Waiting for next fragment…')
+            setMessage(userPaused.current ? 'Paused' : detail.finished ? 'Recording finished' : 'Waiting for next fragment…')
             if (video.buffered.length && !video.paused &&
               video.currentTime >= video.buffered.end(video.buffered.length - 1) - 0.3) {
               autoPaused = true
@@ -182,6 +203,7 @@ export default function LiveVideo({ captureId, token }: { captureId: string; tok
   function goLive() {
     const video = videoRef.current
     if (!video?.buffered.length) return
+    userPaused.current = false
     const end = video.buffered.end(video.buffered.length - 1)
     video.currentTime = Math.max(video.buffered.start(video.buffered.length - 1), end - 2)
     void video.play()

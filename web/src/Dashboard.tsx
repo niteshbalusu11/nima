@@ -120,6 +120,26 @@ export default function Dashboard() {
     }
   }, [authorized, captures, photos, session])
 
+  useEffect(() => {
+    if (!authorized) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]')) return
+      const videos = captures.filter(capture => capture.kind === 'video')
+      if (!videos.length) return
+      event.preventDefault()
+      setSelectedId(current => {
+        const index = videos.findIndex(video => video.id === current)
+        if (index < 0) return event.key === 'ArrowLeft' ? videos[videos.length - 1].id : videos[0].id
+        const direction = event.key === 'ArrowLeft' ? 1 : -1
+        return videos[(index + direction + videos.length) % videos.length].id
+      })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [authorized, captures])
+
   async function enroll(event: FormEvent) {
     event.preventDefault()
     const token = inviteToken(invite)
@@ -188,7 +208,7 @@ export default function Dashboard() {
                 onError={() => setPhotos(previous => { const next = { ...previous }; delete next[selected.id]; return next })} />
             : <div className="dash-empty"><span className="dash-empty-ring" /><p>Waiting for photo upload</p></div>)}
         </div>
-        {selected && <div className="dash-stage-meta"><span>CAPTURE ID&nbsp; {selected.id.slice(0, 8)}</span><span>{selected.kind === 'video' ? `${Math.max(0, selected.acknowledged_objects - 1)} video fragments uploaded` : 'Photo'}</span></div>}
+        {selected && <div className="dash-stage-meta"><span>CAPTURE ID&nbsp; {selected.id.slice(0, 8)}</span><span>{selected.kind === 'video' ? `${Math.max(0, selected.acknowledged_objects - 1)} video fragments uploaded` : 'Photo'}</span><span className="dash-shortcuts">← → videos{selected.kind === 'video' ? ' · Space play/pause' : ''}</span></div>}
       </section>
       <aside className="dash-feed" aria-label="Recent captures">
         <div className="dash-feed-head"><div><span className="dash-eyebrow">ACTIVITY</span><h2>Recent captures</h2></div><span>{captures.length}</span></div>
