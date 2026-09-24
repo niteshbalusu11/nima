@@ -9,6 +9,7 @@ export default defineConfig({
       '/enroll': 'http://127.0.0.1:8080',
       '/me': 'http://127.0.0.1:8080',
       '/captures': 'http://127.0.0.1:8080',
+      '/super-admin': 'http://127.0.0.1:8080',
     },
   },
 })

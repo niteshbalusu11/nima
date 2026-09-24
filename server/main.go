@@ -64,7 +64,7 @@ func run() error {
 		_, err = store.client.PutBucketCors(context.Background(), &s3.PutBucketCorsInput{
 			Bucket: aws.String(store.bucket),
 			CORSConfiguration: &types.CORSConfiguration{CORSRules: []types.CORSRule{{
-				AllowedOrigins: []string{u.Scheme + "://" + u.Host}, AllowedMethods: []string{"PUT"},
+				AllowedOrigins: []string{u.Scheme + "://" + u.Host}, AllowedMethods: []string{"PUT", "GET"},
 				AllowedHeaders: []string{"*"}, MaxAgeSeconds: aws.Int32(300),
 			}}},
 		})
@@ -80,6 +80,7 @@ func run() error {
 		flags := flag.NewFlagSet("invite", flag.ExitOnError)
 		account := flags.String("account", "", "existing account for a replacement device")
 		admin := flags.Bool("admin", false, "invite a new admin; cannot be combined with --account")
+		superAdmin := flags.Bool("super-admin", false, "invite a new super admin for the web dashboard")
 		out := flags.String("out", "invite.png", "private QR image path")
 		textOut := flags.String("text-out", "", "optional private file containing QR text, for local testing")
 		ttl := flags.Duration("ttl", 24*time.Hour, "invite lifetime")
@@ -87,7 +88,15 @@ func run() error {
 		if *ttl <= 0 {
 			return fmt.Errorf("ttl must be positive")
 		}
-		invite, err := issueInvite(db, *account, *ttl, *admin, "")
+		if *superAdmin && (*admin || *account != "") {
+			return fmt.Errorf("--super-admin cannot be combined with --admin or --account")
+		}
+		var invite invitation
+		if *superAdmin {
+			invite, err = issueSuperAdminInvite(db, *ttl)
+		} else {
+			invite, err = issueInvite(db, *account, *ttl, *admin, "")
+		}
 		if err != nil {
 			return err
 		}

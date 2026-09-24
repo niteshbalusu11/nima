@@ -31,6 +31,7 @@ type api struct {
 type profile struct {
 	ID             string `json:"id"`
 	Role           string `json:"role"`
+	SuperAdmin     bool   `json:"super_admin"`
 	Name           string `json:"name"`
 	Email          string `json:"email"`
 	SignalUsername string `json:"signal_username"`
@@ -128,6 +129,8 @@ func (a *api) handler() http.Handler {
 	protected.HandleFunc("GET /captures", a.listCaptures)
 	protected.HandleFunc("GET /captures/{id}", a.getCapture)
 	protected.HandleFunc("DELETE /captures/{id}", a.deleteCapture)
+	protected.HandleFunc("GET /super-admin/captures", a.listSuperAdminCaptures)
+	protected.HandleFunc("GET /super-admin/captures/{id}", a.getSuperAdminCapture)
 	mux.Handle("/", a.auth(protected))
 	return mux
 }
@@ -204,7 +207,8 @@ func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 	var existing sql.NullString
 	var role string
-	err = tx.QueryRow(`UPDATE invites SET consumed_at=? WHERE hash=? AND consumed_at IS NULL AND expires_at>? RETURNING account_id,role`, time.Now().Unix(), digest(input.Token), time.Now().Unix()).Scan(&existing, &role)
+	var superAdmin bool
+	err = tx.QueryRow(`UPDATE invites SET consumed_at=? WHERE hash=? AND consumed_at IS NULL AND expires_at>? RETURNING account_id,role,super_admin`, time.Now().Unix(), digest(input.Token), time.Now().Unix()).Scan(&existing, &role, &superAdmin)
 	if err != nil {
 		failure(w, 401, "Invalid invite")
 		return
@@ -212,10 +216,10 @@ func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
 	id := existing.String
 	if !existing.Valid {
 		id = newID()
-		_, err = tx.Exec("INSERT INTO accounts(id,created_at,role) VALUES(?,?,?)", id, time.Now().Unix(), role)
+		_, err = tx.Exec("INSERT INTO accounts(id,created_at,role,super_admin) VALUES(?,?,?,?)", id, time.Now().Unix(), role, superAdmin)
 	} else {
 		var active int
-		err = tx.QueryRow("SELECT active,role FROM accounts WHERE id=?", id).Scan(&active, &role)
+		err = tx.QueryRow("SELECT active,role,super_admin FROM accounts WHERE id=?", id).Scan(&active, &role, &superAdmin)
 		if active != 1 {
 			failure(w, 401, "Invalid invite")
 			return
@@ -234,7 +238,7 @@ func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
 		failure(w, 503, "Unavailable")
 		return
 	}
-	jsonResponse(w, 201, map[string]any{"token": token, "account_id": id, "role": role})
+	jsonResponse(w, 201, map[string]any{"token": token, "account_id": id, "role": role, "super_admin": superAdmin && role == "admin"})
 }
 func (a *api) createInvite(w http.ResponseWriter, r *http.Request) {
 	var role string
@@ -263,7 +267,7 @@ func (a *api) createInvite(w http.ResponseWriter, r *http.Request) {
 }
 func (a *api) me(w http.ResponseWriter, r *http.Request) {
 	var p profile
-	if err := a.db.QueryRowContext(r.Context(), "SELECT id,role,name,email,signal_username FROM accounts WHERE id=?", account(r)).Scan(&p.ID, &p.Role, &p.Name, &p.Email, &p.SignalUsername); err != nil {
+	if err := a.db.QueryRowContext(r.Context(), "SELECT id,role,role='admin' AND super_admin=1,name,email,signal_username FROM accounts WHERE id=?", account(r)).Scan(&p.ID, &p.Role, &p.SuperAdmin, &p.Name, &p.Email, &p.SignalUsername); err != nil {
 		failure(w, 503, "Unavailable")
 		return
 	}
@@ -521,18 +525,90 @@ func (a *api) listCaptures(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonResponse(w, 200, map[string]any{"captures": list})
 }
+
+func (a *api) requireSuperAdmin(w http.ResponseWriter, r *http.Request) bool {
+	var allowed bool
+	if err := a.db.QueryRowContext(r.Context(), "SELECT role='admin' AND super_admin=1 FROM accounts WHERE id=?", account(r)).Scan(&allowed); err != nil {
+		failure(w, 503, "Unavailable")
+		return false
+	}
+	if !allowed {
+		failure(w, 403, "Super admins only")
+		return false
+	}
+	return true
+}
+
+func (a *api) listSuperAdminCaptures(w http.ResponseWriter, r *http.Request) {
+	if !a.requireSuperAdmin(w, r) {
+		return
+	}
+	rows, err := a.db.QueryContext(r.Context(), `SELECT c.id,c.account_id,COALESCE(NULLIF(a.name,''),'Camera '||substr(c.account_id,1,8)),
+		c.kind,c.created_at,c.finished,
+		(SELECT COUNT(*) FROM objects o WHERE o.capture_id=c.id AND o.acknowledged=1)
+		FROM captures c JOIN accounts a ON a.id=c.account_id
+		WHERE c.deleted_at IS NULL ORDER BY c.created_at DESC,c.id DESC LIMIT 40`)
+	if err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	defer rows.Close()
+	type capture struct {
+		ID                  string `json:"id"`
+		AccountID           string `json:"account_id"`
+		AccountName         string `json:"account_name"`
+		Kind                string `json:"kind"`
+		CreatedAt           int64  `json:"created_at"`
+		Finished            bool   `json:"finished"`
+		AcknowledgedObjects int    `json:"acknowledged_objects"`
+	}
+	list := []capture{}
+	for rows.Next() {
+		var c capture
+		if err := rows.Scan(&c.ID, &c.AccountID, &c.AccountName, &c.Kind, &c.CreatedAt, &c.Finished, &c.AcknowledgedObjects); err != nil {
+			failure(w, 503, "Unavailable")
+			return
+		}
+		list = append(list, c)
+	}
+	if rows.Err() != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	jsonResponse(w, 200, map[string]any{"captures": list})
+}
+
+func (a *api) getSuperAdminCapture(w http.ResponseWriter, r *http.Request) {
+	if !a.requireSuperAdmin(w, r) {
+		return
+	}
+	var kind string
+	var deleted sql.NullInt64
+	if err := a.db.QueryRowContext(r.Context(), "SELECT kind,deleted_at FROM captures WHERE id=?", r.PathValue("id")).Scan(&kind, &deleted); err != nil || deleted.Valid {
+		failure(w, 404, "Not found")
+		return
+	}
+	a.captureDetail(w, r, kind)
+}
+
 func (a *api) getCapture(w http.ResponseWriter, r *http.Request) {
 	kind, ok := a.owned(w, r)
 	if !ok {
 		return
 	}
+	a.captureDetail(w, r, kind)
+}
+
+func (a *api) captureDetail(w http.ResponseWriter, r *http.Request, kind string) {
 	var lat, lon, accuracy sql.NullFloat64
 	var timestamp sql.NullInt64
-	if err := a.db.QueryRowContext(r.Context(), "SELECT latitude,longitude,horizontal_accuracy_m,location_timestamp FROM captures WHERE id=?", r.PathValue("id")).Scan(&lat, &lon, &accuracy, &timestamp); err != nil {
+	var finished bool
+	if err := a.db.QueryRowContext(r.Context(), "SELECT latitude,longitude,horizontal_accuracy_m,location_timestamp,finished FROM captures WHERE id=?", r.PathValue("id")).Scan(&lat, &lon, &accuracy, &timestamp, &finished); err != nil {
 		failure(w, 503, "Unavailable")
 		return
 	}
 	location := locationFromDB(lat, lon, accuracy, timestamp)
+	tail := r.URL.Query().Get("tail") == "1"
 	after := -1
 	if s := r.URL.Query().Get("after"); s != "" {
 		n, err := strconv.Atoi(s)
@@ -542,7 +618,22 @@ func (a *api) getCapture(w http.ResponseWriter, r *http.Request) {
 		}
 		after = n
 	}
-	rows, err := a.db.QueryContext(r.Context(), "SELECT "+objectColumns+" FROM objects WHERE capture_id=? AND sequence>? ORDER BY sequence LIMIT 50", r.PathValue("id"), after)
+	var rows *sql.Rows
+	var err error
+	if tail && kind == "video" {
+		var latest sql.NullInt64
+		if err = a.db.QueryRowContext(r.Context(), "SELECT MAX(sequence) FROM objects WHERE capture_id=? AND acknowledged=1", r.PathValue("id")).Scan(&latest); err != nil {
+			failure(w, 503, "Unavailable")
+			return
+		}
+		start := int64(1)
+		if latest.Valid && latest.Int64 > 6 {
+			start = latest.Int64 - 5
+		}
+		rows, err = a.db.QueryContext(r.Context(), "SELECT "+objectColumns+" FROM objects WHERE capture_id=? AND (sequence=0 OR (sequence>=? AND sequence<=?)) ORDER BY sequence LIMIT 50", r.PathValue("id"), start, latest.Int64)
+	} else {
+		rows, err = a.db.QueryContext(r.Context(), "SELECT "+objectColumns+" FROM objects WHERE capture_id=? AND sequence>? ORDER BY sequence LIMIT 50", r.PathValue("id"), after)
+	}
 	if err != nil {
 		failure(w, 503, "Unavailable")
 		return
@@ -579,5 +670,5 @@ func (a *api) getCapture(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	jsonResponse(w, 200, map[string]any{"id": r.PathValue("id"), "kind": kind, "location": location, "objects": list})
+	jsonResponse(w, 200, map[string]any{"id": r.PathValue("id"), "kind": kind, "finished": finished, "location": location, "objects": list})
 }

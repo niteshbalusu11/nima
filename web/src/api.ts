@@ -1,5 +1,5 @@
-export type Session = { token: string; account_id: string; role: 'member' | 'admin' }
-export type Profile = { id: string; role: 'member' | 'admin'; name: string; email: string; signal_username: string }
+export type Session = { token: string; account_id: string; role: 'member' | 'admin'; super_admin?: boolean }
+export type Profile = { id: string; role: 'member' | 'admin'; super_admin?: boolean; name: string; email: string; signal_username: string }
 
 export class APIError extends Error {
   constructor(public status: number, message: string) {

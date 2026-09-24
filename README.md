@@ -12,6 +12,8 @@ SwiftUI/AVFoundation → a small Go API with SQLite → private S3-compatible st
 
 `web/` is a small React/Vite camera for phone browsers. Open `/app/` on the deployed HTTPS API, enter an existing invite (member or admin), then take photos or record video. Video chunks upload while recording; photos upload after capture. The website can edit name, email, and Signal username. It cannot create invites. Pending uploads are kept in the browser and retried while the site is open or when it is reopened. Keep the page in the foreground while recording.
 
+The private live dashboard is at `/app/?dashboard=1`. A CLI-issued super-admin invite grants read-only access to captures from every account. The dashboard shows photos as they upload and plays verified video fragments while recording continues. See [server instructions](server/README.md) for invitation and browser storage setup.
+
 To run the built site locally, run `cd web && npm ci && npm run build` before `./tools/start-local.sh`, then open `http://127.0.0.1:8080/app/` on the Mac. From `server/`, run `./uploadvideo web-cors --origin http://127.0.0.1:8080` with the local `.env` loaded so RustFS accepts browser PUTs. Phone camera access requires HTTPS; use the deployed site for device checks.
 
 ## Deployed server

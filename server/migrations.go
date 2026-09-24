@@ -39,6 +39,10 @@ ALTER TABLE captures ADD COLUMN latitude REAL;
 ALTER TABLE captures ADD COLUMN longitude REAL;
 ALTER TABLE captures ADD COLUMN horizontal_accuracy_m REAL;
 ALTER TABLE captures ADD COLUMN location_timestamp INTEGER;
+	`,
+	`
+ALTER TABLE accounts ADD COLUMN super_admin INTEGER NOT NULL DEFAULT 0 CHECK(super_admin IN (0,1));
+ALTER TABLE invites ADD COLUMN super_admin INTEGER NOT NULL DEFAULT 0 CHECK(super_admin IN (0,1));
 `,
 }
 

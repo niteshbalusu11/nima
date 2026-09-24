@@ -65,6 +65,34 @@ func TestMigrationsAdoptCurrentUnversionedDatabase(t *testing.T) {
 	}
 }
 
+func TestSuperAdminMigrationPreservesExistingAccountsAndInvites(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "prior.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := migrate(db, migrations[:3]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO accounts(id,role,name,created_at) VALUES('admin','admin','Existing',1)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO invites(hash,expires_at,role,created_by) VALUES('invite',9999999999,'member','admin')"); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db, migrations); err != nil {
+		t.Fatal(err)
+	}
+	var role, name string
+	var superAdmin bool
+	if err := db.QueryRow("SELECT role,name,super_admin FROM accounts WHERE id='admin'").Scan(&role, &name, &superAdmin); err != nil || role != "admin" || name != "Existing" || superAdmin {
+		t.Fatalf("account changed during migration: %q %q %t %v", role, name, superAdmin, err)
+	}
+	if err := db.QueryRow("SELECT role,super_admin FROM invites WHERE hash='invite'").Scan(&role, &superAdmin); err != nil || role != "member" || superAdmin {
+		t.Fatalf("invite changed during migration: %q %t %v", role, superAdmin, err)
+	}
+}
+
 func TestMigrationsUpgradeRollbackAndNewerVersion(t *testing.T) {
 	db, err := openDB(filepath.Join(t.TempDir(), "upgrade.sqlite"))
 	if err != nil {

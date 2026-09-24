@@ -29,7 +29,7 @@ The Vite site is built into the same container and served at `https://upload-vid
 flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo web-cors --origin https://upload-video-api.fly.dev' -a upload-video-api
 ```
 
-`web-cors` permits PUT from that exact origin; the object still requires a short-lived signed URL. It replaces the bucket's CORS rules, so review existing rules first if the bucket gains another browser client. The site accepts member and admin invites but offers no invite creation UI.
+`web-cors` permits PUT and GET from that exact origin; each object still requires a short-lived signed URL. Run it again after deploying the live dashboard so browser video playback can fetch fragments. It replaces the bucket's CORS rules, so review existing rules first if the bucket gains another browser client. The camera site accepts member and admin invites but offers no invite creation UI.
 
 ## Database migrations
 
@@ -64,6 +64,16 @@ Download an invite with `flyctl ssh sftp get /data/admin-invite.png ./admin-invi
 Sessions do not expire automatically. A phone stays signed in using its saved Keychain token. Enrollment returns `token`, `account_id`, and `role`; sessions have no expiry field. Unused invites still expire after 24 hours.
 
 Only the CLI creates admins (`--admin`). Omit that flag for a member invite. In the app, admins open **Profile → Invite person** to create a member invite and show its QR or copy its token. Each invite creates a separate member account; admin status grants no access to other people’s profiles or media. New users can paste the token or scan the QR. In-app invites last 24 hours; generating another does not cancel an existing invite.
+
+For the private live dashboard, create a separate super-admin invite through the CLI:
+
+```sh
+flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo invite --super-admin --out /data/dashboard-invite.png --text-out /data/dashboard-invite.txt' -a upload-video-api
+```
+
+Download the text file privately, then enter its one-time code at `https://upload-video-api.fly.dev/app/?dashboard=1`. The dashboard session stays in that browser tab's session storage. A super admin can view other accounts' captures through read-only `/super-admin/` endpoints; ordinary admins remain limited to their own media. This permission is checked from the account on every request. Revoke the super-admin account through the existing CLI if access should end. Previously issued signed download URLs remain usable until their two-minute expiry.
+
+The dashboard polls for new captures and appends verified MP4 fragments in a browser player. A video is typically a few seconds behind the phone, depending on network delay. The native iPhone app does not yet call `/finish`, so the dashboard displays an idle video as waiting for more fragments after uploads stop; its “finished” label is available for browser recordings that send `/finish`.
 
 `--account` binds a fresh invite to an existing active account, useful for a replacement phone or retrieval helper. It preserves the account role and cannot be combined with `--admin`. The admin-only `revoke` command remains available if explicitly needed; nothing invokes it automatically. Account revocation blocks all its sessions; previously issued storage URLs expire within two minutes.
 
@@ -100,6 +110,7 @@ Protect backups as user data. They contain account/media metadata, not the media
 - Public: `GET /health`, `POST /enroll`.
 - Authenticated: `GET/PATCH /me`, `PUT /captures/{id}`, `POST /captures/{id}/objects/reserve`, `POST /captures/{id}/objects/ack`, `GET /captures`, `GET /captures/{id}`, `DELETE /captures/{id}`.
 - Admin only: `POST /invites` with `{}`; returns `{token, expires_at}`. Clients cannot choose role, account, or expiry. Limited to ten creations per admin per minute, with no total allowance.
+- Super admin only: `GET /super-admin/captures` lists the latest 40 captures across accounts; `GET /super-admin/captures/{id}` returns verified fragments and short-lived download URLs. Use `?tail=1` to join a video near its latest fragment, then `?after=SEQUENCE` for new fragments.
 - Optional: `POST /captures/{id}/finish`; retrieval does not depend on it.
 
 `PUT /captures/{id}` accepts an optional `location` object with `latitude`, `longitude`, `horizontal_accuracy_m`, and Unix `timestamp`. The location is fixed for that capture, returned by the owner's capture list and detail endpoints, and cleared on deletion. Older clients may omit it.

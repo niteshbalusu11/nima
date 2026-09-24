@@ -79,3 +79,9 @@ func issueInvite(db *sql.DB, account string, ttl time.Duration, admin bool, crea
 	_, err := db.Exec("INSERT INTO invites(hash,account_id,expires_at,role,created_by) VALUES(?,?,?,?,?)", digest(invite.Token), target, invite.ExpiresAt, role, issuer)
 	return invite, err
 }
+
+func issueSuperAdminInvite(db *sql.DB, ttl time.Duration) (invitation, error) {
+	invite := invitation{Token: secret(), ExpiresAt: time.Now().Add(ttl).Unix()}
+	_, err := db.Exec("INSERT INTO invites(hash,expires_at,role,super_admin) VALUES(?,?,'admin',1)", digest(invite.Token), invite.ExpiresAt)
+	return invite, err
+}
