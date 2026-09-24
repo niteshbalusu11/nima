@@ -121,6 +121,9 @@ private struct ProfileView: View {
                 TextField("Name", text: $profile.name).textContentType(.name)
                 TextField("Email", text: $profile.email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never)
                 TextField("Signal username", text: $profile.signalUsername).textInputAutocapitalization(.never).autocorrectionDisabled()
+                if profile.role == .admin {
+                    NavigationLink("Invite person") { InviteView(api: api) }
+                }
                 if let message { Text(message).foregroundStyle(.secondary) }
             }
             .disabled(!loaded || saving)
