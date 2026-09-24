@@ -1,15 +1,29 @@
 import Foundation
 import Security
 
+enum AccountRole: String, Codable, Sendable { case member, admin }
+
 struct Session: Codable, Sendable {
     let token: String
     let accountId: String
+    var role: AccountRole
 }
 struct Profile: Codable, Sendable {
     var id = ""
+    var role: AccountRole = .member
     var name = ""
     var email = ""
     var signalUsername = ""
+}
+enum InviteToken {
+    static let prefix = "uploadvideo:invite:"
+    static func parse(_ value: String) -> String? {
+        var token = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if token.hasPrefix(prefix) { token.removeFirst(prefix.count) }
+        let allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        guard token.utf8.count == 43, token.allSatisfy({ allowed.contains($0) }) else { return nil }
+        return token
+    }
 }
 struct APIError: Error, LocalizedError {
     let status: Int

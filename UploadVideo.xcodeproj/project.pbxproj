@@ -17,6 +17,7 @@
 		6DCD2CA582FA5891CAE9FA7A /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09ECBBB9BA2E47316C817303; };
 		D63B6200560377DA67891AAA = {isa = PBXBuildFile; fileRef = D63B6200560377DA67891AAB; };
 		ABDCDFCA897BE8325AB12E05 /* PhotoLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 114BCEAF4FCCB6BE96E7EB3A; };
+		A01D842B7B46ED112BD00001 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00002 /* AuthView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 		E020E3C67BD0C31227720BD8 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = UploadVideo/Configuration/Release.xcconfig; sourceTree = SOURCE_ROOT; };
 		D63B6200560377DA67891AAB = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		114BCEAF4FCCB6BE96E7EB3A /* PhotoLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibrary.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00002 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -85,6 +87,7 @@
 			children = (
 				B22A580CC7BE5D5BD5643497 /* UploadVideoApp.swift */,
 				CA54C291C542BB61A2311C17 /* ContentView.swift */,
+				A01D842B7B46ED112BD00002 /* AuthView.swift */,
 				114BCEAF4FCCB6BE96E7EB3A /* PhotoLibrary.swift */,
 				D63B6200560377DA67891AAB /* Assets.xcassets */,
 				09ECBBB9BA2E47316C817303 /* AppModel.swift */,
@@ -164,6 +167,7 @@
 			files = (
 				6506EFC50074C363C58F7C7A /* UploadVideoApp.swift in Sources */,
 				566267AA891D1842197B339A /* ContentView.swift in Sources */,
+				A01D842B7B46ED112BD00001 /* AuthView.swift in Sources */,
 				ABDCDFCA897BE8325AB12E05 /* PhotoLibrary.swift in Sources */,
 				6DCD2CA582FA5891CAE9FA7A /* AppModel.swift in Sources */,
 				055E100155B344B6ACF0B18C /* Camera.swift in Sources */,

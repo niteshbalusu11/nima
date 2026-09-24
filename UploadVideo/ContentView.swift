@@ -7,6 +7,20 @@ struct ContentView: View {
     @State private var videoMode = true
     @State private var showingProfile = false
     var body: some View {
+        Group {
+            if model.session == nil { AuthView(model: model) }
+            else { cameraContent }
+        }
+        .preferredColorScheme(.dark)
+        .task { await model.activate() }
+        .onChange(of: scenePhase) { _, phase in
+            // Permission dialogs temporarily make the scene inactive; only backgrounding stops capture.
+            if phase == .active { Task { await model.activate() } } else if phase == .background { model.deactivate() }
+        }
+        .onChange(of: model.session?.token) { _, token in if token == nil { showingProfile = false } }
+        .sheet(isPresented: $showingProfile) { ProfileView(api: model.api) }
+    }
+    private var cameraContent: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let camera = model.camera { CameraPreview(session: camera.session).ignoresSafeArea() }
@@ -36,10 +50,6 @@ struct ContentView: View {
                     Button("Open Settings") {
                         if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                     }.buttonStyle(.borderedProminent)
-                } else if model.session == nil {
-                    Image(systemName: "viewfinder").font(.system(size: 100, weight: .ultraLight)).padding(.bottom, 28)
-                    if model.enrolling { ProgressView().tint(.white) }
-                    Text("Scan invite").font(.headline).padding(.bottom, 60)
                 } else {
                     if !model.recording {
                         HStack(spacing: 30) {
@@ -76,17 +86,10 @@ struct ContentView: View {
                 LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
             }
         }
-        .preferredColorScheme(.dark)
-        .task { await model.activate() }
-        .onChange(of: scenePhase) { _, phase in
-            // Permission dialogs temporarily make the scene inactive; only backgrounding stops capture.
-            if phase == .active { Task { await model.activate() } } else if phase == .background { model.deactivate() }
-        }
-        .sheet(isPresented: $showingProfile) { ProfileView(api: model.api) }
     }
 }
 
-private struct CameraPreview: UIViewRepresentable {
+struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()

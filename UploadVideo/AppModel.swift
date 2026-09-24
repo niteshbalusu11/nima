@@ -11,6 +11,7 @@ final class AppModel: ObservableObject {
     @Published var message: String?
     @Published var cloudSymbol = "icloud"
     @Published var enrolling = false
+    @Published var scanning = false
     @Published var cameraDenied = false
     @Published var queueFailure = false
     @Published var captureBlocked = false
@@ -29,7 +30,10 @@ final class AppModel: ObservableObject {
             camera = Camera(queue: queue, onError: { [weak self] message in
                 Task { @MainActor in self?.message = message }
             }, onCode: { [weak self] code in
-                Task { @MainActor in await self?.enroll(code) }
+                Task { @MainActor in
+                    guard let self, self.scanning else { return }
+                    await self.enroll(code, scanned: true)
+                }
             }, onRecordingEnded: { [weak self] in
                 Task { @MainActor in self?.recording = false; self?.stopping = false }
             })
@@ -37,10 +41,7 @@ final class AppModel: ObservableObject {
     }
     func activate() async {
         active = true
-        let granted = await AVCaptureDevice.requestAccess(for: .video)
-        guard active else { return }
-        cameraDenied = !granted
-        if granted { camera?.start(accountId: session?.accountId) }
+        if session != nil || scanning { await startCamera() }
         startUploads()
         #if DEBUG && targetEnvironment(simulator)
         if session == nil, let path = ProcessInfo.processInfo.environment["INVITE_FILE"],
@@ -48,9 +49,17 @@ final class AppModel: ObservableObject {
             await enroll(code.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         #endif
-        if session != nil {
-            do { let _: Profile = try await api.request("GET", "me") }
-            catch let error as APIError where error.status == 401 { invalidateSession() }
+        if let current = session {
+            do {
+                let profile: Profile = try await api.request("GET", "me")
+                if session?.token == current.token, current.role != profile.role {
+                    var updated = current; updated.role = profile.role
+                    try SessionKeychain.save(updated); session = updated
+                }
+            }
+            catch let error as APIError where error.status == 401 {
+                if session?.token == current.token { invalidateSession() }
+            }
             catch { /* Offline enrollment remains usable; pending media stays local. */ }
         }
     }
@@ -59,17 +68,32 @@ final class AppModel: ObservableObject {
         camera?.suspend()
         stopUploads()
     }
-    func enroll(_ code: String) async {
-        guard session == nil, !enrolling, Date().timeIntervalSince(lastInviteAttempt) > 3 else { return }
-        let prefix = "uploadvideo:invite:"
-        guard code.hasPrefix(prefix), code.count == prefix.count + 43 else { message = "Invalid invite"; return }
-        lastInviteAttempt = Date(); enrolling = true; defer { enrolling = false }
+    func startScanning() async {
+        scanning = true; message = nil
+        await startCamera()
+    }
+    func stopScanning() {
+        scanning = false
+        if session == nil { camera?.suspend() }
+    }
+    private func startCamera() async {
+        let granted = await AVCaptureDevice.requestAccess(for: .video)
+        guard active, session != nil || scanning else { return }
+        cameraDenied = !granted
+        if granted { camera?.start(accountId: session?.accountId) }
+    }
+    func enroll(_ code: String, scanned: Bool = false) async {
+        guard session == nil, !enrolling else { return }
+        if scanned, Date().timeIntervalSince(lastInviteAttempt) < 3 { return }
+        lastInviteAttempt = Date()
+        guard let token = InviteToken.parse(code) else { message = "Invalid invite"; return }
+        enrolling = true; defer { enrolling = false }
         do {
             struct Invite: Encodable { let token: String }
-            let result: Session = try await api.request("POST", "enroll", body: API.encode(Invite(token: String(code.dropFirst(prefix.count)))))
+            let result: Session = try await api.request("POST", "enroll", body: API.encode(Invite(token: token)))
             try SessionKeychain.save(result); session = result; message = nil
-            captureBlocked = false; uploadErrors.removeAll()
-            camera?.start(accountId: result.accountId); startUploads()
+            scanning = false; captureBlocked = false; uploadErrors.removeAll()
+            startUploads(); await startCamera()
         } catch let error as APIError { message = error.message }
         catch { message = "Offline" }
     }
@@ -89,7 +113,7 @@ final class AppModel: ObservableObject {
     func takePhoto() { if !captureBlocked { camera?.takePhoto() } }
     private func invalidateSession() {
         camera?.stopRecording(); session = nil; SessionKeychain.clear(); stopUploads()
-        camera?.start(accountId: nil); message = "Scan a new invite"
+        scanning = false; camera?.suspend(); message = "Enter invite"
     }
     private func stopUploads() {
         workers.forEach { $0.cancel() }; workers.removeAll()
