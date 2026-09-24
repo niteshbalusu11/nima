@@ -60,11 +60,6 @@ struct ContentView: View {
                         uploadStatus
                         locationToggle
                         Spacer()
-                        if model.session != nil && !model.recording {
-                            Button { showingProfile = true } label: { Image(systemName: "person.crop.circle") }
-                                .accessibilityLabel("Profile")
-                                .font(.title2)
-                        }
                     }
                     Text(statusMessage ?? "")
                         .font(.subheadline.weight(.semibold))
@@ -93,7 +88,7 @@ struct ContentView: View {
                 if model.cameraDenied {
                     Button("Open Settings") {
                         if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                    }.buttonStyle(.borderedProminent)
+                    }.liquidGlassButton(prominent: true)
                 } else {
                     if !model.recording {
                         HStack(spacing: 4) {
@@ -102,7 +97,7 @@ struct ContentView: View {
                                     Text(mode.title)
                                         .frame(minWidth: 72, minHeight: 44)
                                         .foregroundStyle(model.cameraMode == mode ? .black : .white)
-                                        .background(model.cameraMode == mode ? .yellow : .clear, in: Capsule())
+                                        .liquidGlassCapsule(tint: model.cameraMode == mode ? .yellow : nil)
                                         .contentShape(Capsule())
                                 }
                                 .disabled(model.switchingCamera || (mode == .both && !AVCaptureMultiCamSession.isMultiCamSupported))
@@ -112,14 +107,13 @@ struct ContentView: View {
                         .font(.subheadline.weight(.semibold))
                         .buttonStyle(.plain)
                         .padding(4)
-                        .background(.black.opacity(0.8), in: Capsule())
                         .padding(.top, 12)
                         HStack(spacing: 4) {
                             Button { videoMode = false } label: {
                                 Text("Photo")
                                     .frame(minWidth: 108, minHeight: 50)
                                     .foregroundStyle(videoMode ? .white : .black)
-                                    .background(videoMode ? .clear : .yellow, in: Capsule())
+                                    .liquidGlassCapsule(tint: videoMode ? nil : .yellow)
                                     .contentShape(Capsule())
                             }
                             .accessibilityAddTraits(videoMode ? [] : .isSelected)
@@ -127,7 +121,7 @@ struct ContentView: View {
                                 Text("Video")
                                     .frame(minWidth: 108, minHeight: 50)
                                     .foregroundStyle(videoMode ? .black : .white)
-                                    .background(videoMode ? .yellow : .clear, in: Capsule())
+                                    .liquidGlassCapsule(tint: videoMode ? .yellow : nil)
                                     .contentShape(Capsule())
                             }
                             .accessibilityAddTraits(videoMode ? .isSelected : [])
@@ -135,7 +129,6 @@ struct ContentView: View {
                         .font(.headline)
                         .buttonStyle(.plain)
                         .padding(4)
-                        .background(.black.opacity(0.8), in: Capsule())
                         .padding(.top, 8)
                     }
                     ZStack {
@@ -148,21 +141,33 @@ struct ContentView: View {
                                     Circle().fill(videoMode ? .red : .white).frame(width: 66, height: 66)
                                 }
                             }
+                            .liquidGlassCircle()
                         }
+                        .buttonStyle(.plain)
                         .accessibilityLabel(model.recording ? "Stop recording" : videoMode ? "Record video" : "Take photo")
                         .disabled(model.managingCapture || model.stopping || model.preparingCapture || model.switchingCamera || model.queueFailure || model.captureBlocked)
                         HStack {
-                            galleryButton
-                            Spacer()
                             if model.recording {
+                                galleryButton
+                                Spacer()
                                 Button { model.takePhoto() } label: {
-                                    Circle().fill(.white).frame(width: 38, height: 38).padding(12)
-                                }.accessibilityLabel("Take photo")
+                                    Circle().fill(.white).frame(width: 38, height: 38).padding(12).liquidGlassCircle()
+                                }.buttonStyle(.plain).accessibilityLabel("Take photo")
+                            } else {
+                                galleryButton
+                                Spacer()
+                                profileButton
                             }
                         }.padding(.horizontal, 24)
                     }.padding(.top, 16).padding(.bottom, 22)
                 }
-                if model.cameraDenied { galleryButton.padding(.bottom, 22).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 24) }
+                if model.cameraDenied {
+                    HStack {
+                        galleryButton
+                        Spacer()
+                        profileButton
+                    }.padding(.horizontal, 24).padding(.bottom, 22)
+                }
             }
             .foregroundStyle(.white)
             .background(alignment: .bottom) {
@@ -183,7 +188,7 @@ struct ContentView: View {
         .font(.system(size: 28, weight: .semibold))
         .foregroundStyle(color)
         .frame(width: 48, height: 48)
-        .background(.black.opacity(0.8), in: Circle())
+        .liquidGlassCircle(interactive: false)
         .overlay(Circle().strokeBorder(color, lineWidth: 2))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(uploaded ? "All uploads complete" : uploadStatusText)
@@ -196,7 +201,7 @@ struct ContentView: View {
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(color)
                 .frame(width: 48, height: 48)
-                .background(.black.opacity(0.8), in: Circle())
+                .liquidGlassCircle(tint: enabled ? .yellow.opacity(0.25) : nil)
                 .overlay(Circle().strokeBorder(color, lineWidth: 2))
         }
         .buttonStyle(.plain)
@@ -204,12 +209,24 @@ struct ContentView: View {
         .accessibilityValue(enabled ? "On" : "Off")
         .accessibilityHint("Include location with new photos and videos")
     }
+    private var profileButton: some View {
+        Button { showingProfile = true } label: {
+            Image(systemName: "person.crop.circle")
+                .font(.title2)
+                .frame(width: 56, height: 56)
+                .liquidGlassCircle()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Profile")
+    }
     private var galleryButton: some View {
         Button { showingGallery = true } label: {
             CaptureThumbnail(capture: model.captures.first, library: model.library)
                 .frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 9))
                 .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.55), lineWidth: 1))
+                .padding(4).liquidGlassRoundedRectangle(cornerRadius: 13)
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("Photos and videos")
         .disabled(model.managingCapture || model.recording || model.stopping || model.preparingCapture)
     }
@@ -341,6 +358,7 @@ private struct ProfileView: View {
                 }.disabled(!loaded || saving || model.managingCapture)
                 Section {
                     Button("Log Out", role: .destructive) { confirmingLogout = true }
+                        .liquidGlassButton()
                         .disabled(saving || model.managingCapture || model.recording || model.stopping || model.preparingCapture)
                 }
                 if let message { Text(message).foregroundStyle(.secondary) }

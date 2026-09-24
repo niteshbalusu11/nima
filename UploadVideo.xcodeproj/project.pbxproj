@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		566267AA891D1842197B339A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA54C291C542BB61A2311C17 /* ContentView.swift */; };
+		746D9B184A5B8B7C4AC2A103 /* LiquidGlassControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 746D9B184A5B8B7C4AC2A104 /* LiquidGlassControls.swift */; };
 		6506EFC50074C363C58F7C7A /* UploadVideoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B22A580CC7BE5D5BD5643497 /* UploadVideoApp.swift */; };
 		88D1C469656CEB06BCA9A6CD /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 430C07E962E2702AE7F52144 /* Foundation.framework */; };
 		E3AE4BE37633FF5347B67FCF /* API.swift in Sources */ = {isa = PBXBuildFile; fileRef = 292D172A525A02145C45A0C6; };
@@ -29,6 +30,7 @@
 		A27B83E9200FD08DD8B40B74 /* UploadVideo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = UploadVideo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B22A580CC7BE5D5BD5643497 /* UploadVideoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UploadVideoApp.swift; sourceTree = "<group>"; };
 		CA54C291C542BB61A2311C17 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		746D9B184A5B8B7C4AC2A104 /* LiquidGlassControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidGlassControls.swift; sourceTree = "<group>"; };
 		292D172A525A02145C45A0C6 /* API.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = API.swift; sourceTree = "<group>"; };
 		0F8F0F7AC25D68994B1DE477 /* UploadQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueue.swift; sourceTree = "<group>"; };
 		4B4C49C397C08E10624B7D0A /* SegmentWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentWriter.swift; sourceTree = "<group>"; };
@@ -95,6 +97,7 @@
 			children = (
 				B22A580CC7BE5D5BD5643497 /* UploadVideoApp.swift */,
 				CA54C291C542BB61A2311C17 /* ContentView.swift */,
+				746D9B184A5B8B7C4AC2A104 /* LiquidGlassControls.swift */,
 				A01D842B7B46ED112BD00002 /* AuthView.swift */,
 				A01D842B7B46ED112BD00004 /* InviteView.swift */,
 				A01D842B7B46ED112BD00008 /* GalleryView.swift */,
@@ -180,6 +183,7 @@
 			files = (
 				6506EFC50074C363C58F7C7A /* UploadVideoApp.swift in Sources */,
 				566267AA891D1842197B339A /* ContentView.swift in Sources */,
+				746D9B184A5B8B7C4AC2A103 /* LiquidGlassControls.swift in Sources */,
 				A01D842B7B46ED112BD00001 /* AuthView.swift in Sources */,
 				A01D842B7B46ED112BD00003 /* InviteView.swift in Sources */,
 				A01D842B7B46ED112BD00007 /* GalleryView.swift in Sources */,

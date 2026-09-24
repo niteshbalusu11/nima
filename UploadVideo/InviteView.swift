@@ -32,7 +32,7 @@ struct InviteView: View {
                             UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic: invite.token]],
                                 options: [.localOnly: true, .expirationDate: invite.expiration])
                             copied = true
-                        }.disabled(expired)
+                        }.liquidGlassButton().disabled(expired)
                     }
                 }
             }
@@ -40,7 +40,7 @@ struct InviteView: View {
                 if creating { ProgressView().frame(maxWidth: .infinity) }
                 else { Text(invite == nil ? "Create invite" : "New invite").frame(maxWidth: .infinity) }
             }
-            .buttonStyle(.borderedProminent).controlSize(.large).disabled(creating)
+            .liquidGlassButton(prominent: true).controlSize(.large).disabled(creating)
             if let message { Text(message).font(.subheadline).foregroundStyle(.secondary) }
             Spacer()
         }

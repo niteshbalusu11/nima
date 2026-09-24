@@ -17,7 +17,12 @@ struct AuthView: View {
                     .onSubmit { join() }
                 PasteButton(payloadType: String.self) { values in
                     if let value = values.first { token = value; model.message = nil }
-                }.labelStyle(.iconOnly).tint(.gray).accessibilityLabel("Paste invite")
+                }
+                .labelStyle(.iconOnly)
+                .tint(.clear)
+                .padding(4)
+                .liquidGlassRoundedRectangle(cornerRadius: 12)
+                .accessibilityLabel("Paste invite")
             }
             .padding(14).background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
             .disabled(model.enrolling)
@@ -25,11 +30,11 @@ struct AuthView: View {
                 if model.enrolling { ProgressView().frame(maxWidth: .infinity) }
                 else { Text("Continue").frame(maxWidth: .infinity) }
             }
-            .buttonStyle(.borderedProminent).controlSize(.large).tint(.white).foregroundStyle(.black)
+            .liquidGlassButton(prominent: true).controlSize(.large).tint(.white).foregroundStyle(.black)
             .disabled(token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.enrolling)
             Button { editing = false; showingScanner = true } label: {
                 Label("Scan QR", systemImage: "qrcode.viewfinder")
-            }.disabled(model.enrolling)
+            }.liquidGlassButton().disabled(model.enrolling)
             if let message = model.message { Text(message).font(.subheadline).foregroundStyle(.secondary) }
             Spacer()
         }
@@ -44,7 +49,7 @@ struct AuthView: View {
                         if model.cameraDenied {
                             Button("Open Settings") {
                                 if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                            }.buttonStyle(.borderedProminent)
+                            }.liquidGlassButton(prominent: true)
                         } else {
                             Image(systemName: "viewfinder").font(.system(size: 180, weight: .ultraLight))
                         }
