@@ -8,6 +8,12 @@ The phone stays signed in; sessions have no automatic expiry. Unused invite QR c
 
 SwiftUI/AVFoundation → a small Go API with SQLite → private S3-compatible storage. RustFS locally; Tigris on Fly.io in production. App-level encryption is deferred for this pilot. Release builds use HTTPS; local Debug builds permit HTTP.
 
+## Web camera
+
+`web/` is a small React/Vite camera for phone browsers. Open `/app/` on the deployed HTTPS API, enter an existing invite (member or admin), then take photos or record video. Video chunks upload while recording; photos upload after capture. The website can edit name, email, and Signal username. It cannot create invites. Pending uploads are kept in the browser and retried while the site is open or when it is reopened. Keep the page in the foreground while recording.
+
+To run the built site locally, run `cd web && npm ci && npm run build` before `./tools/start-local.sh`, then open `http://127.0.0.1:8080/app/` on the Mac. From `server/`, run `./uploadvideo web-cors --origin http://127.0.0.1:8080` with the local `.env` loaded so RustFS accepts browser PUTs. Phone camera access requires HTTPS; use the deployed site for device checks.
+
 ## Deployed server
 
 The app points to **https://upload-video-api.fly.dev** by default. The backend is one Go container with one SQLite volume and a private Tigris bucket. See [server/fly.toml](server/fly.toml) and [server instructions](server/README.md).

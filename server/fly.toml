@@ -4,7 +4,7 @@ kill_signal = "SIGTERM"
 kill_timeout = "15s"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "server/Dockerfile"
 
 [env]
   APP_ENV = "production"

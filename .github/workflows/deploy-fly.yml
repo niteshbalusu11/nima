@@ -5,6 +5,8 @@ on:
     branches: [master]
     paths:
       - 'server/**'
+      - 'web/**'
+      - '.dockerignore'
       - 'tools/deploy-fly.sh'
       - '.github/workflows/deploy-fly.yml'
   workflow_dispatch:

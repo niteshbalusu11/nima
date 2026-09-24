@@ -6,7 +6,7 @@ One Go container on Fly, one SQLite volume, and one private Tigris bucket. No se
 
 ## Deploy
 
-[GitHub Actions](https://github.com/niteshbalusu11/streamvideo/actions/workflows/deploy-fly.yml) deploys pushes to `master` that change `server/**`, `tools/deploy-fly.sh`, or the deployment workflow. iOS-only changes do not trigger a deploy. To trigger a deployment on demand, choose **Run workflow** in Actions, or run:
+[GitHub Actions](https://github.com/niteshbalusu11/streamvideo/actions/workflows/deploy-fly.yml) deploys pushes to `master` that change `server/**`, `web/**`, `tools/deploy-fly.sh`, or the deployment workflow. iOS-only changes do not trigger a deploy. To trigger a deployment on demand, choose **Run workflow** in Actions, or run:
 
 ```sh
 gh workflow run deploy-fly.yml --ref master
@@ -22,6 +22,14 @@ flyctl tokens create deploy -a upload-video-api --name github-actions-streamvide
 ```
 
 All deployments go through this workflow. `tools/deploy-fly.sh` is the CI implementation, not a separate manual deployment step.
+
+The Vite site is built into the same container and served at `https://upload-video-api.fly.dev/app/`. After the first web deployment, configure the private Tigris bucket for browser uploads from that origin:
+
+```sh
+flyctl machine exec MACHINE_ID 'su-exec app:app uploadvideo web-cors --origin https://upload-video-api.fly.dev' -a upload-video-api
+```
+
+`web-cors` permits PUT from that exact origin; the object still requires a short-lived signed URL. It replaces the bucket's CORS rules, so review existing rules first if the bucket gains another browser client. The site accepts member and admin invites but offers no invite creation UI.
 
 ## Database migrations
 
