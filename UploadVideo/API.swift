@@ -4,7 +4,7 @@ import Security
 struct Session: Codable, Sendable {
     let token: String
     let accountId: String
-    let expiresAt: Int64
+    let expiresAt: Int64 // Compatibility field: zero means no expiry; the server validates access.
 }
 struct Profile: Codable, Sendable {
     var id = ""

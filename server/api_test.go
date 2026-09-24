@@ -105,9 +105,13 @@ func enrollTest(t *testing.T, h *testAPI) (string, string) {
 	var result struct {
 		Token     string
 		AccountID string `json:"account_id"`
+		ExpiresAt *int64 `json:"expires_at"`
 	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		t.Fatal(err)
+	}
+	if result.ExpiresAt == nil || *result.ExpiresAt != 0 {
+		t.Fatal("session must return expires_at=0 for existing iPhone clients")
 	}
 	return result.Token, result.AccountID
 }
@@ -352,7 +356,7 @@ func TestLiveMediaBeforeStop(t *testing.T) {
 	token, account := enrollTest(t, h)
 	folder := t.TempDir()
 	sessionPath := filepath.Join(folder, "session.json")
-	data, _ := json.Marshal(map[string]any{"token": token, "account_id": account, "expires_at": time.Now().Add(time.Hour).Unix()})
+	data, _ := json.Marshal(map[string]any{"token": token, "account_id": account, "expires_at": 0})
 	if err = os.WriteFile(sessionPath, data, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -394,12 +398,24 @@ func TestLiveMediaBeforeStop(t *testing.T) {
 	}
 }
 
-func TestExpiredSessionCannotAuthorize(t *testing.T) {
+func TestSessionsHaveNoAutomaticExpiry(t *testing.T) {
 	h := setup(t)
 	token, _ := enrollTest(t, h)
-	if _, err := h.db.Exec("UPDATE sessions SET expires_at=? WHERE hash=?", time.Now().Add(-time.Minute).Unix(), digest(token)); err != nil {
+	var expires int64
+	if err := h.db.QueryRow("SELECT expires_at FROM sessions WHERE hash=?", digest(token)).Scan(&expires); err != nil {
 		t.Fatal(err)
 	}
+	if expires != 0 {
+		t.Fatal("new session has an automatic expiry")
+	}
 	status, body := request(t, h.server.URL, "GET", "/me", token, nil)
+	mustStatus(t, 200, status, body)
+	// Previously issued sessions remain valid even beyond their old seven-day deadline.
+	if _, err := h.db.Exec("UPDATE sessions SET expires_at=? WHERE hash=?", time.Now().Add(-30*24*time.Hour).Unix(), digest(token)); err != nil {
+		t.Fatal(err)
+	}
+	status, body = request(t, h.server.URL, "GET", "/me", token, nil)
+	mustStatus(t, 200, status, body)
+	status, body = request(t, h.server.URL, "GET", "/me", secret(), nil)
 	mustStatus(t, 401, status, body)
 }

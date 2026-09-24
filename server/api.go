@@ -111,7 +111,8 @@ func (a *api) auth(next http.Handler) http.Handler {
 			return
 		}
 		var id string
-		err := a.db.QueryRowContext(r.Context(), `SELECT s.account_id FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.hash=? AND s.revoked=0 AND s.expires_at>? AND a.active=1`, digest(strings.TrimPrefix(header, "Bearer ")), time.Now().Unix()).Scan(&id)
+		// Sessions stay signed in, including those issued with the old seven-day deadline.
+		err := a.db.QueryRowContext(r.Context(), `SELECT s.account_id FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.hash=? AND s.revoked=0 AND a.active=1`, digest(strings.TrimPrefix(header, "Bearer "))).Scan(&id)
 		if err != nil {
 			failure(w, 401, "Scan a new invite")
 			return
@@ -197,8 +198,8 @@ func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := secret()
-	expires := time.Now().Add(7 * 24 * time.Hour).Unix()
-	if _, err = tx.Exec("INSERT INTO sessions(hash,account_id,expires_at) VALUES(?,?,?)", digest(token), id, expires); err != nil {
+	// Keep the legacy column and response field for installed clients; zero means no expiry.
+	if _, err = tx.Exec("INSERT INTO sessions(hash,account_id,expires_at) VALUES(?,?,0)", digest(token), id); err != nil {
 		failure(w, 503, "Unavailable")
 		return
 	}
@@ -206,7 +207,7 @@ func (a *api) enroll(w http.ResponseWriter, r *http.Request) {
 		failure(w, 503, "Unavailable")
 		return
 	}
-	jsonResponse(w, 201, map[string]any{"token": token, "account_id": id, "expires_at": expires})
+	jsonResponse(w, 201, map[string]any{"token": token, "account_id": id, "expires_at": 0})
 }
 func (a *api) me(w http.ResponseWriter, r *http.Request) {
 	var p profile
