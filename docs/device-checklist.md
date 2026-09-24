@@ -8,6 +8,7 @@ Verification on September 24, 2026:
 - Signed simulator: enrollment through the local API, Keychain session survives relaunch, optional profile edits persist.
 - Builds: Debug simulator and unsigned Release for physical iOS both compile. Release has no HTTP transport exception.
 - Queue: reconstruction after offline capture, account isolation, initialization-before-media ordering, saved originals retained.
+- Photos: synthetic JPEG and completed H.264/AAC video imported through the app's actual PhotoKit saver in the simulator. Denied add-only access leaves the queue intact. MP4 export preserves portrait dimensions, audio, and seven-second duration despite a dropped-frame gap; queue tests reject missing fragments and another account's capture.
 
 - Deployed Fly/Tigris: HTTPS health, invite enrollment, synthetic live video/audio/photo retrieval before Stop, private access, conditional PUT, lost acknowledgment recovery, Machine restart persistence, and downloaded SQLite backup integrity. See [fly-deployment.md](fly-deployment.md).
 
@@ -22,5 +23,6 @@ These checks do not replace physical iPhone validation. Before handing out the a
 7. Confirm low-storage stops capture visibly and preserves pending files. The pilot retains saved files as well, with a 256 MiB cap.
 8. Revoke an account and confirm new upload/download authorization fails. Previously issued signed URLs expire within two minutes.
 9. Confirm the physical iPhone uses the deployed Fly HTTPS API and uploads to its private Tigris bucket. Server/storage integration, restart persistence and downloaded backup integrity have already passed.
+10. On first capture, allow add-only Photos access. Take a photo, record video, take a photo during recording, then Stop. Confirm both photos and the complete video appear in Photos with correct orientation, audio, and duration. Repeat offline and with microphone denied, a very short clip, rapid Stop/start, and backgrounding. Deny Photos permission: capture/upload still work, with a short notice. Re-enable it in Settings and confirm the next capture saves. Force-quit or a failed import has no automatic Photos-save retry; original fragments remain in the upload queue.
 
 Do not label the pilot ready until physical-device live video/photo upload, retrieval without the source phone, and private Tigris access have passed.

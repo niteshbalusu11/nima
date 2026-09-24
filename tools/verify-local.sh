@@ -5,7 +5,7 @@ task_tmp=$(mktemp -d)
 trap 'rm -rf "$task_tmp"' EXIT
 swiftc -swift-version 6 -D DEBUG -parse-as-library UploadVideo/API.swift UploadVideo/UploadQueue.swift tools/QueueProbe.swift -o "$task_tmp/queue-probe"
 "$task_tmp/queue-probe"
-swiftc -swift-version 6 -D DEBUG -parse-as-library UploadVideo/API.swift UploadVideo/UploadQueue.swift UploadVideo/SegmentWriter.swift tools/MediaProbe.swift -o "$task_tmp/media-probe"
+swiftc -swift-version 6 -D DEBUG -parse-as-library UploadVideo/API.swift UploadVideo/UploadQueue.swift UploadVideo/SegmentWriter.swift UploadVideo/PhotoLibrary.swift tools/MediaProbe.swift -o "$task_tmp/media-probe"
 cd server
 set -a
 source .env

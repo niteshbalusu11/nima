@@ -23,6 +23,15 @@ struct QueueProbe {
         let fragment = reopened.next(accountId: "one", captureKind: "video")!
         precondition(fragment.sequence == 1 && fragment.duration == 1.2 && fragment.startTime == 100)
         precondition(FileManager.default.fileExists(atPath: reopened.file(initialization).path))
+        // Photos export includes acknowledged fragments and refuses missing pieces or another owner's media.
+        let parts = try reopened.videoParts(accountId: "one", captureId: "video")
+        precondition(parts == [reopened.file(initialization), reopened.file(fragment)])
+        precondition((try? reopened.videoParts(accountId: "two", captureId: "video")) == nil)
+        try reopened.enqueue(Data("init".utf8), accountId: "one", captureId: "gap", captureKind: "video", sequence: 0, kind: "init")
+        try reopened.enqueue(Data("fragment".utf8), accountId: "one", captureId: "gap", captureKind: "video", sequence: 2, kind: "media")
+        precondition((try? reopened.videoParts(accountId: "one", captureId: "gap")) == nil)
+        try reopened.enqueue(Data("init".utf8), accountId: "one", captureId: "empty", captureKind: "video", sequence: 0, kind: "init")
+        precondition((try? reopened.videoParts(accountId: "one", captureId: "empty")) == nil)
         print("PASS: offline queue survives relaunch; ordered init, account isolation, durable ack, retained originals")
     }
 }

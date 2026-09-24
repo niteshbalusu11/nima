@@ -73,9 +73,17 @@ struct MediaProbe {
         // Reopening the queue must preserve saved state rather than uploading everything again.
         let reopened = try UploadQueue(root: root)
         guard reopened.pending(accountId: session.accountId) == 0 else { fatalError("Acknowledgments were not durable") }
+        let movie = try await PhotoLibrary.exportVideo(parts: reopened.videoParts(accountId: session.accountId, captureId: videoID),
+                                                       in: root.deletingLastPathComponent())
+        let asset = AVURLAsset(url: movie)
+        let duration = try await asset.load(.duration).seconds
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        let videoTracks = try await asset.loadTracks(withMediaType: .video)
+        let size = try await videoTracks[0].load(.naturalSize)
+        precondition(duration > 6.8 && duration < 7.2 && audioTracks.count == 1 && size == CGSize(width: 480, height: 640))
         let output = ["video_id": videoID, "photo_id": photoID]
         try JSONSerialization.data(withJSONObject: output).write(to: root.appendingPathComponent("../captures.json"))
-        print("PASS: audio/video, frame gap, concurrent photo, queue reload")
+        print("PASS: audio/video, frame gap, concurrent photo, queue reload, Photos MP4 export")
     }
     static func videoSample(_ frame: Int) throws -> CMSampleBuffer {
         var pixel: CVPixelBuffer?

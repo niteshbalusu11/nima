@@ -388,6 +388,10 @@ func TestLiveMediaBeforeStop(t *testing.T) {
 	if err != nil || len(bytes.TrimSpace(output)) != 0 {
 		t.Fatalf("live file does not decode cleanly: %v %s", err, output)
 	}
+	output, err = exec.Command("ffmpeg", "-v", "error", "-i", filepath.Join(folder, "video.mp4"), "-f", "null", "-").CombinedOutput()
+	if err != nil || len(bytes.TrimSpace(output)) != 0 {
+		t.Fatalf("Photos export does not decode cleanly: %v %s", err, output)
+	}
 }
 
 func TestExpiredSessionCannotAuthorize(t *testing.T) {

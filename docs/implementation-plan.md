@@ -18,10 +18,11 @@ September 24, 2026. The implementation now includes the native camera, Go/SQLite
 | Video | Roughly 480p, 15 fps, H.264 around 500 kbps; optional mono AAC around 32 kbps. Approximately one-second fMP4 segments. |
 | Frame loss | Dropping raw frames is acceptable when capture/encoding cannot keep up. Preserve original timestamps and audio/video synchronization. |
 | Photos | JPEG captured and uploaded immediately through the same upload service. Included in today's release. |
+| Save to Photos | Add-only permission on the first shutter tap. JPEGs save after capture; stopped videos export from local fragments to MP4 without re-encoding, then save. Uploads remain independent. |
 | Encryption | Defer app-level media encryption and encryption-key recovery. Keep HTTPS and R2's provider-managed encryption at rest. Our service and Cloudflare can read the media. |
 | UI | Camera first: full-screen preview, Photo/Video selector, large shutter, recording timer, discreet cloud indicator, profile icon. |
 | Profile | Optional name, email, and Signal username on one simple page. Stored only in our database; not used for login. |
-| Deferred | Mesh, gallery, social sharing, adaptive bitrate, extra camera modes, passkeys, and app-level encryption. |
+| Deferred | Mesh, in-app gallery browsing, social sharing, adaptive bitrate, extra camera modes, passkeys, and app-level encryption. |
 
 R2 manages its default storage encryption keys; it is not client-side encryption. [R2 data security](https://developers.cloudflare.com/r2/reference/data-security/)
 
