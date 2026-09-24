@@ -1,0 +1,47 @@
+name: Deploy server to Fly
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'server/**'
+      - 'tools/deploy-fly.sh'
+      - '.github/workflows/deploy-fly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Let an active deployment finish before starting another against the SQLite volume.
+concurrency:
+  group: fly-upload-video-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Set up Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+        with:
+          version: '0.4.102'
+
+      - name: Test and deploy server
+        run: ./tools/deploy-fly.sh
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Check API health
+        run: curl --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors https://upload-video-api.fly.dev/health
