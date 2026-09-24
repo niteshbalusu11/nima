@@ -4,7 +4,7 @@ Plan for the next phase. Keep the existing Go API, SQLite volume, SwiftUI app, a
 
 ## Permission model
 
-Proposed rule: only the server CLI can create admin invites. Signed-in admins can generate invites for regular members in the app. Members cannot generate invites. Admin status grants invite creation only; it does not grant access to other people's profiles or media.
+Confirmed rule: only the server CLI can create admin invites. Signed-in admins can generate invites for regular members in the app. Members cannot generate invites. Admin status grants invite creation only; it does not grant access to other people's profiles or media.
 
 | Actor | Create member invite | Create admin invite |
 | --- | --- | --- |
