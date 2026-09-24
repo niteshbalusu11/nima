@@ -6,7 +6,22 @@ One Go container on Fly, one SQLite volume, and one private Tigris bucket. No se
 
 ## Deploy
 
-From the repository root:
+[GitHub Actions](https://github.com/niteshbalusu11/streamvideo/actions/workflows/deploy-fly.yml) deploys pushes to `master` that change `server/**`, `tools/deploy-fly.sh`, or the deployment workflow. iOS-only changes do not trigger a deploy. To deploy manually, choose **Run workflow** in Actions, or run:
+
+```sh
+gh workflow run deploy-fly.yml --ref master
+```
+
+The workflow runs the Go tests with the race detector, builds the container on the GitHub runner, deploys with `--ha=false`, and checks HTTPS health. Deployments run one at a time. `FLY_API_TOKEN` is a GitHub repository secret containing an app-scoped Fly deploy token; Tigris credentials stay on Fly.
+
+The CI deploy token is valid for one year. To replace it without printing the value, pipe a new app-scoped token directly into GitHub Secrets:
+
+```sh
+flyctl tokens create deploy -a upload-video-api --name github-actions-streamvideo --expiry 8760h \
+  | gh secret set FLY_API_TOKEN --repo niteshbalusu11/streamvideo
+```
+
+For a local deploy, from the repository root:
 
 ```sh
 ./tools/deploy-fly.sh
