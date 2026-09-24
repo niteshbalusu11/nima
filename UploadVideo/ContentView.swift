@@ -40,23 +40,22 @@ struct ContentView: View {
                 }
                 .sensoryFeedback(.impact, trigger: model.photoPulse)
             VStack {
-                HStack {
-                    if model.session != nil {
-                        Image(systemName: model.cloudSymbol)
-                            .accessibilityLabel(model.cloudSymbol == "checkmark.icloud" ? "Uploads saved" : "Uploads pending")
+                VStack(spacing: 10) {
+                    HStack {
+                        uploadStatus
+                        Spacer()
+                        if model.session != nil && !model.recording {
+                            Button { showingProfile = true } label: { Image(systemName: "person.crop.circle") }
+                                .accessibilityLabel("Profile")
+                                .font(.title2)
+                        }
                     }
-                    Spacer()
                     if model.recording {
                         Text(model.recordingStarted, style: .timer).monospacedDigit()
                             .padding(.horizontal, 12).padding(.vertical, 5).background(.red, in: Capsule())
-                        Spacer()
-                    }
-                    if model.session != nil && !model.recording {
-                        Button { showingProfile = true } label: { Image(systemName: "person.crop.circle") }
-                            .accessibilityLabel("Profile")
                     }
                 }
-                .font(.title2).padding(.horizontal, 24).padding(.top, 12)
+                .padding(.horizontal, 24).padding(.top, 12)
                 Spacer()
                 if let message = model.message {
                     Text(message).font(.subheadline.weight(.medium)).padding(10).background(.black.opacity(0.65), in: Capsule())
@@ -122,6 +121,23 @@ struct ContentView: View {
                 LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false)
             }
         }
+    }
+    private var uploadStatus: some View {
+        let uploaded = model.cloudSymbol == "checkmark.icloud"
+        let paused = model.cloudSymbol == "icloud.slash"
+        let color: Color = uploaded ? .green : paused ? .red : .yellow
+        return HStack(spacing: 9) {
+            Image(systemName: uploaded ? "checkmark.icloud.fill" : paused ? "icloud.slash.fill" : "icloud.and.arrow.up.fill")
+                .font(.system(size: 28, weight: .semibold))
+            Text(uploaded ? "All uploaded" : paused ? "Upload paused" : "Uploading")
+                .font(.headline)
+        }
+        .foregroundStyle(uploaded ? .black : .white)
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(uploaded ? color : .black.opacity(0.8), in: Capsule())
+        .overlay(Capsule().strokeBorder(color, lineWidth: 2))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(uploaded ? "All uploads complete" : paused ? "Upload paused" : "Uploads in progress")
     }
     private var galleryButton: some View {
         Button { showingGallery = true } label: {
