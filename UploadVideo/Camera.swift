@@ -107,6 +107,17 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             } catch { onError("Could not focus") }
         }
     }
+    func zoom(by scale: CGFloat) {
+        work.async { [self] in
+            guard session.isRunning, let device = captureDevice, scale.isFinite, scale > 0 else { return }
+            do {
+                try device.lockForConfiguration()
+                let zoom = device.videoZoomFactor * scale
+                device.videoZoomFactor = min(max(zoom, device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
+                device.unlockForConfiguration()
+            } catch { onError("Could not zoom") }
+        }
+    }
     private func applyAutomaticFocus(_ device: AVCaptureDevice, at point: CGPoint) {
         if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = point }
         if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }

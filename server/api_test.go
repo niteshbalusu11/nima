@@ -276,6 +276,29 @@ func TestLimitsAndValidation(t *testing.T) {
 	}
 }
 
+func TestAccountQuotaIsIndependent(t *testing.T) {
+	h := setup(t)
+	token, _ := enrollTest(t, h)
+	other, _ := enrollTest(t, h)
+	id, _ := reserveTestPhoto(t, h, token)
+	const tenGiB int64 = 10 << 30
+	if _, err := h.db.Exec("UPDATE objects SET size=? WHERE capture_id=?", tenGiB-1, id); err != nil {
+		t.Fatal(err)
+	}
+	secondID := newID()
+	s, b := request(t, h.server.URL, "PUT", "/captures/"+secondID, token, map[string]string{"kind": "photo"})
+	mustStatus(t, 200, s, b)
+	o := makeObject([]byte("ab"), "photo", 0)
+	s, b = request(t, h.server.URL, "POST", "/captures/"+secondID+"/objects/reserve", token, o)
+	mustStatus(t, 413, s, b)
+	if _, err := h.db.Exec("UPDATE objects SET size=? WHERE capture_id=?", tenGiB-2, id); err != nil {
+		t.Fatal(err)
+	}
+	s, b = request(t, h.server.URL, "POST", "/captures/"+secondID+"/objects/reserve", token, o)
+	mustStatus(t, 200, s, b)
+	reserveTestPhoto(t, h, other)
+}
+
 // Run with TEST_S3=1 and the local .env exported. Uses a real private RustFS bucket.
 func TestS3ConditionalUploadAndRecovery(t *testing.T) {
 	if os.Getenv("TEST_S3") != "1" {

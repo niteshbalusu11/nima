@@ -29,7 +29,7 @@ struct ContentView: View {
     private var cameraContent: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if let camera = model.camera { CameraPreview(session: camera.session, onFocus: camera.focus).ignoresSafeArea() }
+            if let camera = model.camera { CameraPreview(session: camera.session, onFocus: camera.focus, onZoom: camera.zoom).ignoresSafeArea() }
             Color.black.opacity(shutterClosed ? 0.8 : 0).ignoresSafeArea().allowsHitTesting(false)
                 .task(id: model.photoPulse) {
                     guard model.photoPulse > 0 else { return }
@@ -137,22 +137,29 @@ struct ContentView: View {
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     var onFocus: ((CGPoint) -> Void)? = nil
+    var onZoom: ((CGFloat) -> Void)? = nil
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.layerView.session = session
         view.layerView.videoGravity = .resizeAspectFill
         view.onFocus = onFocus
+        view.onZoom = onZoom
         return view
     }
-    func updateUIView(_ uiView: PreviewView, context: Context) { uiView.onFocus = onFocus }
+    func updateUIView(_ uiView: PreviewView, context: Context) {
+        uiView.onFocus = onFocus
+        uiView.onZoom = onZoom
+    }
     final class PreviewView: UIView {
         var onFocus: ((CGPoint) -> Void)?
+        var onZoom: ((CGFloat) -> Void)?
         private let focusRing = UIView(frame: CGRect(x: 0, y: 0, width: 72, height: 72))
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var layerView: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
         override init(frame: CGRect) {
             super.init(frame: frame)
             addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
+            addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:))))
             focusRing.layer.borderColor = UIColor.yellow.cgColor
             focusRing.layer.borderWidth = 2
             focusRing.layer.cornerRadius = 36
@@ -171,6 +178,11 @@ struct CameraPreview: UIViewRepresentable {
             UIView.animate(withDuration: 0.25, delay: 0.6, options: .beginFromCurrentState) {
                 self.focusRing.alpha = 0
             }
+        }
+        @objc private func pinched(_ gesture: UIPinchGestureRecognizer) {
+            guard gesture.state == .changed else { return }
+            onZoom?(gesture.scale)
+            gesture.scale = 1
         }
         override func layoutSubviews() {
             super.layoutSubviews()

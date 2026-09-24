@@ -19,7 +19,7 @@ import (
 )
 
 const maxObjectSize int64 = 12 << 20
-const accountQuota int64 = 5 << 30
+const accountQuota int64 = 10 << 30
 
 var captureID = regexp.MustCompile(`^[a-fA-F0-9-]{32,36}$`)
 

@@ -3,9 +3,8 @@
 ## Purpose
 
 - it has to be invite only app, so it can't be open to anyone.
-- upload-video is an iOS only app that uploads videos/photos as it's being taken to a secure cloud which is encrypted.
+- upload-video is an iOS only app that uploads videos/photos as it's being taken to a secure cloud.
 - live upload is the important piece, not record fully and then upload.
-- videos are live encrypted as they are getting uploaded
 - it should be able to share a the video/photo to a local mesh network that is opt-in (something like bitchat, we worry about this later).
 - the app should be stupidly simply to use. almost like the stock iOS camera app.
 - no too much text, UX should be simple and straightforward.
