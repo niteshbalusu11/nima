@@ -45,7 +45,7 @@ final class UploadQueue: @unchecked Sendable {
     private let root: URL
     private var items: [QueuedObject] = []
     private var bytes = 0
-    static let limit = 256 * 1024 * 1024
+    static let limit = 3 * 1024 * 1024 * 1024
     init(root: URL? = nil) throws {
         self.root = try root ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                         appropriateFor: nil, create: true).appendingPathComponent("PendingMedia")

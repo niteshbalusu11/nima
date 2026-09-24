@@ -385,7 +385,7 @@ func TestLiveMediaBeforeStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ffprobe: %v %s", err, output)
 	}
-	if !bytes.Contains(output, []byte(`"h264"`)) || !bytes.Contains(output, []byte(`"aac"`)) || !bytes.Contains(output, []byte(`"width": 480`)) {
+	if !bytes.Contains(output, []byte(`"h264"`)) || !bytes.Contains(output, []byte(`"aac"`)) || !bytes.Contains(output, []byte(`"width": 720`)) {
 		t.Fatalf("wrong streams: %s", output)
 	}
 	var timing struct {

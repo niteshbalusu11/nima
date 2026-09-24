@@ -20,10 +20,10 @@ final class SegmentWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendable 
         writer.initialSegmentStartTime = .zero
         video = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: 480, AVVideoHeightKey: 640,
+            AVVideoWidthKey: 720, AVVideoHeightKey: 1280,
             AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: 500_000, AVVideoExpectedSourceFrameRateKey: 15,
-                AVVideoMaxKeyFrameIntervalKey: 15, AVVideoMaxKeyFrameIntervalDurationKey: 1,
+                AVVideoAverageBitRateKey: 1_500_000, AVVideoExpectedSourceFrameRateKey: 30,
+                AVVideoMaxKeyFrameIntervalKey: 30, AVVideoMaxKeyFrameIntervalDurationKey: 1,
                 AVVideoAllowFrameReorderingKey: false,
                 AVVideoProfileLevelKey: AVVideoProfileLevelH264MainAutoLevel
             ]

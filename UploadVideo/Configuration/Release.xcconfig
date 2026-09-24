@@ -1,3 +1,2 @@
 API_BASE_URL = https:/$()/upload-video-api.fly.dev
-#include? "Local.xcconfig"
 INFOPLIST_FILE = UploadVideo/Configuration/Release-Info.plist

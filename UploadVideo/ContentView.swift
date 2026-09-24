@@ -29,7 +29,7 @@ struct ContentView: View {
     private var cameraContent: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if let camera = model.camera { CameraPreview(session: camera.session).ignoresSafeArea() }
+            if let camera = model.camera { CameraPreview(session: camera.session, onFocus: camera.focus).ignoresSafeArea() }
             Color.black.opacity(shutterClosed ? 0.8 : 0).ignoresSafeArea().allowsHitTesting(false)
                 .task(id: model.photoPulse) {
                     guard model.photoPulse > 0 else { return }
@@ -117,16 +117,42 @@ struct ContentView: View {
 
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
+    var onFocus: ((CGPoint) -> Void)? = nil
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.layerView.session = session
         view.layerView.videoGravity = .resizeAspectFill
+        view.onFocus = onFocus
         return view
     }
-    func updateUIView(_ uiView: PreviewView, context: Context) {}
+    func updateUIView(_ uiView: PreviewView, context: Context) { uiView.onFocus = onFocus }
     final class PreviewView: UIView {
+        var onFocus: ((CGPoint) -> Void)?
+        private let focusRing = UIView(frame: CGRect(x: 0, y: 0, width: 72, height: 72))
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var layerView: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped(_:))))
+            focusRing.layer.borderColor = UIColor.yellow.cgColor
+            focusRing.layer.borderWidth = 2
+            focusRing.layer.cornerRadius = 36
+            focusRing.isUserInteractionEnabled = false
+            focusRing.alpha = 0
+            addSubview(focusRing)
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+        @objc private func tapped(_ gesture: UITapGestureRecognizer) {
+            guard let onFocus else { return }
+            let point = gesture.location(in: self)
+            onFocus(layerView.captureDevicePointConverted(fromLayerPoint: point))
+            focusRing.layer.removeAllAnimations()
+            focusRing.center = point
+            focusRing.alpha = 1
+            UIView.animate(withDuration: 0.25, delay: 0.6, options: .beginFromCurrentState) {
+                self.focusRing.alpha = 0
+            }
+        }
         override func layoutSubviews() {
             super.layoutSubviews()
             if let connection = layerView.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }

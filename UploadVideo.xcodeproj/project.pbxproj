@@ -17,6 +17,7 @@
 		6DCD2CA582FA5891CAE9FA7A /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09ECBBB9BA2E47316C817303; };
 		D63B6200560377DA67891AAA = {isa = PBXBuildFile; fileRef = D63B6200560377DA67891AAB; };
 		ABDCDFCA897BE8325AB12E05 /* PhotoLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 114BCEAF4FCCB6BE96E7EB3A; };
+		F475E05AF32448A897344AAF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F475E05AF32448A897344AAE; };
 		A01D842B7B46ED112BD00001 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00002 /* AuthView.swift */; };
 		A01D842B7B46ED112BD00003 /* InviteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00004 /* InviteView.swift */; };
 		A01D842B7B46ED112BD00005 /* CaptureLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00006 /* CaptureLibrary.swift */; };
@@ -37,6 +38,7 @@
 		E020E3C67BD0C31227720BD8 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = UploadVideo/Configuration/Release.xcconfig; sourceTree = SOURCE_ROOT; };
 		D63B6200560377DA67891AAB = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		114BCEAF4FCCB6BE96E7EB3A /* PhotoLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibrary.swift; sourceTree = "<group>"; };
+		F475E05AF32448A897344AAE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD00002 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD00004 /* InviteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteView.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD00006 /* CaptureLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureLibrary.swift; sourceTree = "<group>"; };
@@ -99,6 +101,7 @@
 				A01D842B7B46ED112BD00006 /* CaptureLibrary.swift */,
 				114BCEAF4FCCB6BE96E7EB3A /* PhotoLibrary.swift */,
 				D63B6200560377DA67891AAB /* Assets.xcassets */,
+				F475E05AF32448A897344AAE /* PrivacyInfo.xcprivacy */,
 				09ECBBB9BA2E47316C817303 /* AppModel.swift */,
 				F583598781191B3BA29561D2 /* Camera.swift */,
 				4B4C49C397C08E10624B7D0A /* SegmentWriter.swift */,
@@ -164,6 +167,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D63B6200560377DA67891AAA /* Assets.xcassets in Resources */,
+				F475E05AF32448A897344AAF /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -253,17 +257,18 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = GNQ3HY2357;
 				GENERATE_INFOPLIST_FILE = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				MARKETING_VERSION = 0.1.0;
-				INFOPLIST_KEY_CFBundleDisplayName = "Upload Video";
+				INFOPLIST_KEY_CFBundleDisplayName = Witness;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Capture photos and videos to upload securely.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio with videos you capture.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.UploadVideo;
+				PRODUCT_BUNDLE_IDENTIFIER = com.prodata.uploadvideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
@@ -340,17 +345,18 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = GNQ3HY2357;
 				GENERATE_INFOPLIST_FILE = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				MARKETING_VERSION = 0.1.0;
-				INFOPLIST_KEY_CFBundleDisplayName = "Upload Video";
+				INFOPLIST_KEY_CFBundleDisplayName = Witness;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Capture photos and videos to upload securely.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record audio with videos you capture.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.UploadVideo;
+				PRODUCT_BUNDLE_IDENTIFIER = com.prodata.uploadvideo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;

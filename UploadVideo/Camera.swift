@@ -17,6 +17,8 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private let onPhotoCaptured: @Sendable () -> Void
     private var configured = false
     private var audioEnabled = false
+    private var captureDevice: AVCaptureDevice?
+    private var photoDimensions: CMVideoDimensions?
     private var accountId: String?
     private var recordingId: String?
     private var writer: SegmentWriter?
@@ -40,17 +42,20 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             self.accountId = accountId
             do {
                 if !configured { try configure(); configured = true }
-                if !session.isRunning { session.startRunning() }
+                if !session.isRunning { try configureCamera(); session.startRunning() }
             } catch { onError("Camera unavailable") }
         }
     }
     private func configure() throws {
         session.beginConfiguration(); defer { session.commitConfiguration() }
-        session.sessionPreset = .vga640x480
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
             throw APIError(status: 0, message: "Camera unavailable")
         }
         let input = try AVCaptureDeviceInput(device: device)
+        guard session.canSetSessionPreset(.hd1280x720) else {
+            throw APIError(status: 0, message: "Camera unavailable")
+        }
+        session.sessionPreset = .hd1280x720
         guard session.canAddInput(input), session.canAddOutput(video), session.canAddOutput(photos) else {
             throw APIError(status: 0, message: "Camera unavailable")
         }
@@ -66,12 +71,47 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             codes.setMetadataObjectsDelegate(self, queue: work)
             if codes.availableMetadataObjectTypes.contains(.qr) { codes.metadataObjectTypes = [.qr] }
         }
-        try device.lockForConfiguration()
-        if device.activeFormat.videoSupportedFrameRateRanges.contains(where: { $0.minFrameRate <= 15 && $0.maxFrameRate >= 15 }) {
-            device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 15)
-            device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 15)
+        captureDevice = device
+        observations.append(NotificationCenter.default.addObserver(forName: AVCaptureDevice.subjectAreaDidChangeNotification,
+                                                                   object: device, queue: nil) { [weak self] _ in
+            self?.focus(at: CGPoint(x: 0.5, y: 0.5))
+        })
+    }
+    private func configureCamera() throws {
+        guard let device = captureDevice else { throw APIError(status: 0, message: "Camera unavailable") }
+        let pixels: (CMVideoDimensions) -> Int64 = { Int64($0.width) * Int64($0.height) }
+        let withinTarget = device.activeFormat.supportedMaxPhotoDimensions.filter { pixels($0) <= 12_500_000 }
+        guard let dimensions = withinTarget.max(by: { pixels($0) < pixels($1) }) else {
+            throw APIError(status: 0, message: "Camera unavailable")
         }
-        device.unlockForConfiguration()
+        photos.maxPhotoDimensions = dimensions
+        photos.maxPhotoQualityPrioritization = .balanced
+        photoDimensions = dimensions
+        try device.lockForConfiguration()
+        defer { device.unlockForConfiguration() }
+        guard device.activeFormat.videoSupportedFrameRateRanges.contains(where: { $0.minFrameRate <= 30 && $0.maxFrameRate >= 30 }) else {
+            throw APIError(status: 0, message: "Camera unavailable")
+        }
+        device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 30)
+        device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 30)
+        device.isSubjectAreaChangeMonitoringEnabled = true
+        applyAutomaticFocus(device, at: CGPoint(x: 0.5, y: 0.5))
+    }
+    func focus(at point: CGPoint) {
+        work.async { [self] in
+            guard session.isRunning, let device = captureDevice else { return }
+            do {
+                try device.lockForConfiguration()
+                applyAutomaticFocus(device, at: point)
+                device.unlockForConfiguration()
+            } catch { onError("Could not focus") }
+        }
+    }
+    private func applyAutomaticFocus(_ device: AVCaptureDevice, at point: CGPoint) {
+        if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = point }
+        if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+        if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = point }
+        if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
     }
     private func enableAudio() {
         guard !audioEnabled, AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
@@ -120,7 +160,8 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             do { try uploadQueue.checkSpace() } catch { onError("Storage full"); return }
             let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
             settings.flashMode = .off
-            settings.photoQualityPrioritization = .speed
+            settings.photoQualityPrioritization = .balanced
+            if let photoDimensions { settings.maxPhotoDimensions = photoDimensions }
             photoAccounts[settings.uniqueID] = accountId
             photos.capturePhoto(with: settings, delegate: self)
         }

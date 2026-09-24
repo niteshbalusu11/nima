@@ -1,6 +1,8 @@
-# Upload Video
+# Witness
 
 Invite-only native iPhone camera. Scan an invite once, then shoot. Photos upload immediately; video uploads in roughly one-second fragments **while recording**. Optional profile: name, email, Signal username.
+
+Internal TestFlight uses the ProData Platform Inc account. See [the TestFlight release instructions](docs/testflight.md) for signing, uploading and tester setup.
 
 The phone stays signed in; sessions have no automatic expiry. Unused invite QR codes expire after 24 hours and can only be redeemed once.
 
@@ -35,9 +37,9 @@ For an iPhone on the same Wi-Fi:
 
 1. In `server/.env`, set `LISTEN_ADDR=0.0.0.0:8080`, `STORAGE_BIND_IP=0.0.0.0`, and `S3_ENDPOINT=http://YOUR_MAC_LAN_IP:9000`. Restart `start-local.sh`. The signed storage URL **must be reachable by the phone**; localhost would point to the phone itself.
 2. Copy `UploadVideo/Configuration/Local.xcconfig.example` to `Local.xcconfig` in the same directory. Set `API_BASE_URL` to the Mac's LAN address, preserving the example's Xcode slash syntax.
-3. Set your signing team and unique bundle identifier in Xcode, run the Debug build, and scan the QR. Use a trusted local network for this HTTP development setup.
+3. Run the Debug build with the configured ProData signing team and scan the QR. Use a trusted local network for this HTTP development setup. `Local.xcconfig` only affects Debug; Release always defaults to the deployed HTTPS API.
 
-The camera UI has Photo/Video, shutter/stop, a photo button during recording, a small cloud indicator, and an optional profile sheet. Microphone denial allows silent video. Profile fields are optional contact details, never login credentials.
+The camera UI has Photo/Video, shutter/stop, a photo button during recording, tap-to-focus, a small cloud indicator, and an optional profile sheet. Video targets 720×1280 at 30 fps and 1.5 Mbps; photos request up to 12 MP with balanced processing when the camera format supports it. Microphone denial allows silent video. Profile fields are optional contact details, never login credentials.
 
 Photos save automatically to the iPhone's Photos library after capture, including during video recording. Completed videos save as one MP4 after Stop, reusing the already encoded fragments without re-encoding. The first shutter tap requests add-only Photos permission; denial leaves capture and uploads working and shows “Photos access off.” Enable it later in iOS Settings. Photos saving does not wait for the network, and live uploads do not wait for Photos.
 
@@ -66,6 +68,6 @@ xcodebuild -project UploadVideo.xcodeproj -scheme UploadVideo \
 
 Local integration tests do not exercise a physical camera, device thermal behavior, cellular networking, or physical-device use of the deployed service. Follow [the device checklist](docs/device-checklist.md) before the pilot. Foreground recording only; locking/backgrounding stops capture. Pending uploads resume when the app opens. Completed fragments survive interruption; the current unfinished fragment may be lost on force-quit.
 
-The app retains both pending and uploaded local media, excluded from iCloud backup, up to 256 MiB with a 100 MiB disk-space floor. It stops recording near that limit. There is no automatic deletion or cleanup UI yet. Photos library copies are separate and follow the phone's iCloud Photos settings. Saving to Photos requires permission and successful capture finalization; a force-quit can leave only the retained upload fragments. Failed Photos saves show a short error and are not retried automatically. A long pilot needs retrieval and deliberate cleanup; do not delete the app with pending media. Account storage reservations are capped at 5 GiB server-side.
+The app retains both pending and uploaded local media, excluded from iCloud backup, up to 3 GiB with a 100 MiB disk-space floor. It stops recording near that limit. There is no automatic deletion or cleanup UI yet. Photos library copies are separate and follow the phone's iCloud Photos settings. Saving to Photos requires permission and successful capture finalization; a force-quit can leave only the retained upload fragments. Failed Photos saves show a short error and are not retried automatically. A long pilot needs retrieval and deliberate cleanup; do not delete the app with pending media. Account storage reservations are capped at 5 GiB server-side.
 
 For Fly/Tigris deployment, invitations, revocation, backup and retrieval, see [server/README.md](server/README.md). The original decisions remain in [the implementation plan](docs/implementation-plan.md).

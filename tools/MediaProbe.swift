@@ -33,14 +33,14 @@ struct MediaProbe {
             }
         }
         var liveVerified = false
-        for frame in 0..<105 {
+        for frame in 0..<210 {
             // A deliberate 200 ms gap verifies that dropped frames preserve audio/video time.
-            if !(27...29).contains(frame) { try writer.append(videoSample(frame), isVideo: true) }
+            if !(54...59).contains(frame) { try writer.append(videoSample(frame), isVideo: true) }
             try writer.append(audioSample(frame), isVideo: false)
-            if frame == 30 {
+            if frame == 60 {
                 try queue.enqueue(jpeg(), accountId: session.accountId, captureId: photoID, captureKind: "photo", sequence: 0, kind: "photo")
             }
-            if frame == 75 {
+            if frame == 150 {
                 struct Capture: Decodable, Sendable {
                     struct Object: Decodable, Sendable { let kind: String; let acknowledged: Bool; let url: String? }
                     let objects: [Object]
@@ -59,7 +59,7 @@ struct MediaProbe {
                 print("LIVE VERIFIED: video fragments and photo retrieved before Stop")
                 liveVerified = true
             }
-            try await Task.sleep(for: .milliseconds(67))
+            try await Task.sleep(for: .milliseconds(33))
         }
         let completed = await withCheckedContinuation { continuation in writer.finish { continuation.resume(returning: $0) } }
         guard completed, liveVerified else { fatalError("Encoder failed") }
@@ -87,7 +87,7 @@ struct MediaProbe {
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
         let size = try await videoTracks[0].load(.naturalSize)
-        precondition(duration > 6.8 && duration < 7.2 && audioTracks.count == 1 && size == CGSize(width: 480, height: 640))
+        precondition(duration > 6.8 && duration < 7.2 && audioTracks.count == 1 && size == CGSize(width: 720, height: 1280))
         let output = ["video_id": videoID, "photo_id": photoID]
         try JSONSerialization.data(withJSONObject: output).write(to: root.appendingPathComponent("../captures.json"))
         print("PASS: audio/video, frame gap, concurrent photo, queue reload, Photos MP4 export, gallery thumbnails and status")
@@ -95,26 +95,20 @@ struct MediaProbe {
     static func videoSample(_ frame: Int) throws -> CMSampleBuffer {
         var pixel: CVPixelBuffer?
         let attributes: [String: Any] = [kCVPixelBufferIOSurfacePropertiesKey as String: [:]]
-        guard CVPixelBufferCreate(kCFAllocatorDefault, 480, 640, kCVPixelFormatType_32BGRA, attributes as CFDictionary, &pixel) == kCVReturnSuccess, let pixel else { throw CocoaError(.coderInvalidValue) }
+        guard CVPixelBufferCreate(kCFAllocatorDefault, 720, 1280, kCVPixelFormatType_32BGRA, attributes as CFDictionary, &pixel) == kCVReturnSuccess, let pixel else { throw CocoaError(.coderInvalidValue) }
         CVPixelBufferLockBaseAddress(pixel, [])
         let address = CVPixelBufferGetBaseAddress(pixel)!.assumingMemoryBound(to: UInt8.self)
-        let stride = CVPixelBufferGetBytesPerRow(pixel)
-        for y in 0..<640 { for x in 0..<480 {
-            let offset = y * stride + x * 4
-            address[offset] = UInt8((x + frame * 3) % 256)
-            address[offset + 1] = UInt8((y + frame * 2) % 256)
-            address[offset + 2] = UInt8(frame % 256); address[offset + 3] = 255
-        } }
+        memset(address, Int32(frame % 256), CVPixelBufferGetDataSize(pixel))
         CVPixelBufferUnlockBaseAddress(pixel, [])
         var format: CMVideoFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixel, formatDescriptionOut: &format)
-        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 15), presentationTimeStamp: CMTime(value: Int64(1500 + frame), timescale: 15), decodeTimeStamp: .invalid)
+        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 30), presentationTimeStamp: CMTime(value: Int64(3000 + frame), timescale: 30), decodeTimeStamp: .invalid)
         var sample: CMSampleBuffer?
         let status = CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixel, formatDescription: format!, sampleTiming: &timing, sampleBufferOut: &sample)
         guard status == noErr, let sample else { throw CocoaError(.coderInvalidValue) }; return sample
     }
     static func audioSample(_ frame: Int) throws -> CMSampleBuffer {
-        let samples = 2940
+        let samples = 1470
         var desc = AudioStreamBasicDescription(mSampleRate: 44100, mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked, mBytesPerPacket: 2,
             mFramesPerPacket: 1, mBytesPerFrame: 2, mChannelsPerFrame: 1, mBitsPerChannel: 16, mReserved: 0)
@@ -125,7 +119,7 @@ struct MediaProbe {
             blockAllocator: kCFAllocatorDefault, customBlockSource: nil, offsetToData: 0, dataLength: samples * 2, flags: 0, blockBufferOut: &block)
         let wave = (0..<samples).map { Int16(sin(Double(frame * samples + $0) * 440 * 2 * .pi / 44100) * 4000) }
         wave.withUnsafeBytes { bytes in _ = CMBlockBufferReplaceDataBytes(with: bytes.baseAddress!, blockBuffer: block!, offsetIntoDestination: 0, dataLength: bytes.count) }
-        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 44100), presentationTimeStamp: CMTime(value: Int64(1500 + frame), timescale: 15), decodeTimeStamp: .invalid)
+        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 44100), presentationTimeStamp: CMTime(value: Int64(3000 + frame), timescale: 30), decodeTimeStamp: .invalid)
         var size = 2; var sample: CMSampleBuffer?
         let status = CMSampleBufferCreateReady(allocator: kCFAllocatorDefault, dataBuffer: block, formatDescription: format,
             sampleCount: samples, sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleSizeEntryCount: 1, sampleSizeArray: &size, sampleBufferOut: &sample)
