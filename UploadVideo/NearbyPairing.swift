@@ -41,7 +41,13 @@ enum NearbyPairing {
         let other = try peer(hello, channel: channel, store: store, credentials: credentials)
         let proof = try proof(sender: me.device, recipient: other.device, senderNonce: challenge, recipientNonce: hello.nonce ?? "", authority: credentials.authority)
         try NearbyPermission.verify(hello.proof ?? "", key: other.device.signingPublicKey, data: proof)
-        let old = await store.snapshot().approvals.first { $0.sender == me.device && $0.recipient == other.device }
+        // The recipient may have saved consent just before our connection was lost.
+        if let saved = hello.permission {
+            guard saved.authority == credentials.authority, saved.approval.sender == me.device,
+                  saved.approval.recipient == other.device else { throw PeerStore.failure("Invalid saved permission") }
+            try saved.verify()
+        }
+        let old = await store.snapshot().approvals.first { $0.sender == me.device && $0.recipient == other.device } ?? hello.permission?.approval
         let approval = PeerApproval(id: old?.id ?? UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""), sender: me.device, recipient: other.device, createdAt: old?.createdAt ?? Int64(Date().timeIntervalSince1970), senderName: me.name, recipientName: other.name)
         var permission = NearbyPermission(approval: approval, authority: credentials.authority)
         permission.senderSignature = DeviceIdentity.encodeURL(try identity.signNearby(permission.payload()))
@@ -63,7 +69,8 @@ enum NearbyPairing {
         let challenge = nonce()
         let proof = try proof(sender: other.device, recipient: store.device, senderNonce: hello.nonce ?? "", recipientNonce: challenge, authority: credentials.authority)
         try await channel.sendPairing(Message(type: "hello", server: store.baseURL.absoluteString, certificate: credentials.certificate,
-                                             nonce: challenge, proof: DeviceIdentity.encodeURL(try identity.signNearby(proof))))
+                                             nonce: challenge, proof: DeviceIdentity.encodeURL(try identity.signNearby(proof)),
+                                             permission: await store.savedPairing(from: other.device)))
         let offered = try await channel.readPairing()
         try NearbyPermission.verify(offered.proof ?? "", key: other.device.signingPublicKey, data: proof)
         guard offered.type == "offer", var permission = offered.permission, permission.authority == credentials.authority,

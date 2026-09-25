@@ -50,11 +50,11 @@ final class NearbySharing: ObservableObject {
     private var cloudEndings: Set<Data> = []
 
     init(api: API, queue: UploadQueue, peers: PeerStore, identity: DeviceIdentity,
-         budget: MediaStorageBudget, slots: UploadSlots) throws {
+         budget: MediaStorageBudget, slots: UploadSlots, root: URL? = nil) throws {
         self.api = api; self.queue = queue; self.peers = peers; self.slots = slots
         self.signingIdentity = identity
-        source = try OwnerMediaRecords(identity: identity, peers: peers, budget: budget)
-        store = try ReceivedMediaStore(peers: peers, budget: budget)
+        source = try OwnerMediaRecords(identity: identity, peers: peers, root: root?.appendingPathComponent("SharedMediaRecords"), budget: budget)
+        store = try ReceivedMediaStore(peers: peers, root: root?.appendingPathComponent("ReceivedMedia"), budget: budget)
         selectionKey = "nearby.selection." + api.baseURL.absoluteString + "." + peers.device.accountId + "." + peers.device.id
         since = UserDefaults.standard.data(forKey: selectionKey).flatMap { try? JSONDecoder().decode([String: Date].self, from: $0) } ?? [:]
         selected = Set(since.keys)
@@ -180,7 +180,6 @@ final class NearbySharing: ObservableObject {
                 var next: [NearbyTransfer.Delivery] = []
                 for capture in queue.captures(accountId: peers.device.accountId) {
                     let recipients = Set(since.filter { capture.createdAt >= $0.value }.map(\.key))
-                    if recipients.isEmpty { continue }
                     do {
                         if let prepared = try await source.prepare(captureId: capture.id, queue: queue, approvalIDs: recipients) {
                             let signed = try MediaRecords.Capture(prepared.descriptor, recorder: peers.device)

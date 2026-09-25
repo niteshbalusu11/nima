@@ -369,7 +369,10 @@ actor ReceivedMediaStore {
         let temporary = url.deletingLastPathComponent().appendingPathComponent(".tmp-" + UUID().uuidString)
         // Object metadata is already covered by its full in-flight reservation.
         let objectMetadata = url.lastPathComponent == "record.json"
-        let reservation = objectMetadata ? nil : try budget?.reserve(data.count, area: .received)
+        // A tiny deletion marker must be writable using the free-space safety
+        // margin, so a full media allowance cannot prevent reclaiming space.
+        let deletion = url.lastPathComponent.hasPrefix("deleted-")
+        let reservation = objectMetadata || deletion ? nil : try budget?.reserve(data.count, area: .received)
         defer { if !objectMetadata { try? budget?.finish(reservation, paths: [temporary, url]) } }
         defer { try? FileManager.default.removeItem(at: temporary) }
         try data.write(to: temporary, options: [.completeFileProtection])

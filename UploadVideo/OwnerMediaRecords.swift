@@ -41,9 +41,11 @@ actor OwnerMediaRecords {
 
     func prepare(captureId: String, queue: UploadQueue, approvalIDs: Set<String>,
                  now: Int64 = Int64(Date().timeIntervalSince1970)) async throws -> Prepared? {
-        guard !approvalIDs.isEmpty else { return nil }
         guard approvalIDs.count <= 3, UUID(uuidString: captureId)?.uuidString.lowercased() == captureId,
               now > 0, now <= Int64.max - MediaRecords.grantLifetime else { throw MediaRecords.failure("Invalid sharing request") }
+        // Finish cloud metadata for a previously shared recording even after
+        // Nearby stops or the app restarts. No recipients means no new grants.
+        if approvalIDs.isEmpty && !FileManager.default.fileExists(atPath: root.appendingPathComponent(captureId).appendingPathComponent("descriptor.json").path) { return nil }
         let snapshot = await peers.snapshot()
         guard healthy, snapshot.accessActive else { throw MediaRecords.failure("Sharing is unavailable") }
         let approvals = snapshot.approvals.filter { approvalIDs.contains($0.id) && $0.sender == device }

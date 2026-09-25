@@ -100,7 +100,18 @@ struct NearbyMediaCheck {
         } catch is CancellationError { }
         try expect(await peers[0].snapshot().approvals.isEmpty, "Sender saved declined consent")
         try expect(await peers[1].snapshot().approvals.isEmpty, "Recipient saved declined consent")
-        for index in 1...3 { try await pair(peers[0], peers[index], identities[0], identities[index], expectConsent: true) }
+        // Model a sender crash before persisting acceptance, after the receiver saved it.
+        let scope = Data((config.baseUrl.absoluteString + "\n" + peers[0].device.accountId + "\n" + peers[0].device.id).utf8)
+        let cache = config.root.appendingPathComponent("peers/" + SHA256.hash(data: scope).map { String(format: "%02x", $0) }.joined() + ".json")
+        let beforeAcceptance = try Data(contentsOf: cache)
+        try await pair(peers[0], peers[1], identities[0], identities[1], expectConsent: true)
+        let accepted = await peers[1].snapshot().approvals
+        try beforeAcceptance.write(to: cache)
+        peers[0] = try PeerStore(api: API(baseURL: config.baseUrl, token: config.sessions[0].token), session: config.sessions[0], device: peers[0].device, root: config.root.appendingPathComponent("peers"))
+        peers[1] = try PeerStore(api: API(baseURL: config.baseUrl, token: config.sessions[1].token), session: config.sessions[1], device: peers[1].device, root: config.root.appendingPathComponent("peers"))
+        try await pair(peers[0], peers[1], identities[0], identities[1], expectConsent: false)
+        try expect(await peers[0].snapshot().approvals == accepted, "Interrupted pairing replaced saved consent")
+        for index in 2...3 { try await pair(peers[0], peers[index], identities[0], identities[index], expectConsent: true) }
         // No HTTP approval call was needed for the native handshake. The server
         // must still have zero approvals until a participant reconnects to sync.
         struct Approvals: Decodable, Sendable { let approvals: [PeerApproval] }
@@ -116,6 +127,7 @@ struct NearbyMediaCheck {
         let approvals = await peers[0].snapshot().approvals
         func approval(_ index: Int) -> PeerApproval { approvals.first { $0.recipient == peers[index].device }! }
         let apiA = API(baseURL: config.baseUrl, token: config.sessions[0].token)
+        try await ownerCompletionCheck(config: config, peers: peers[0], identity: identities[0], approval: approval(1))
         let queue = try UploadQueue(root: config.root.appendingPathComponent("phone-0/PendingMedia"), budget: budgets[0])
         let source = try OwnerMediaRecords(identity: identities[0], peers: peers[0], root: config.root.appendingPathComponent("phone-0/SharedMediaRecords"), budget: budgets[0])
         let importedId = UUID().uuidString.lowercased()
@@ -289,6 +301,48 @@ struct NearbyMediaCheck {
         try expect(try await stores[2].inventory(captureHash: sparseHash).count == 2, "Revocation removed saved originals")
         print("PASS: complementary recipient fragments, interrupted ending, gap-safe playback, revoked grant retains local copies")
         print("PASS: native nearby recovery · A stays offline, B/C/D converge in RustFS, durable recipient retry and local-only deletion")
+    }
+    static func ownerCompletionCheck(config: Config, peers: PeerStore, identity: DeviceIdentity, approval: PeerApproval) async throws {
+        struct Detail: Decodable, Sendable { let cloudComplete: Bool?; let recordingEnding: String? }
+        let api = API(baseURL: config.baseUrl, token: config.sessions[0].token)
+        for restart in [false, true] {
+            let root = config.root.appendingPathComponent("stop-sharing-" + UUID().uuidString)
+            let budget = try MediaStorageBudget(root: root)
+            let queue = try UploadQueue(root: root.appendingPathComponent("PendingMedia"), budget: budget)
+            func open() throws -> NearbySharing {
+                try NearbySharing(api: api, queue: queue, peers: peers, identity: identity, budget: budget, slots: UploadSlots(), root: root)
+            }
+            var sharing = try open()
+            defer { sharing.stopSharing(); sharing.suspend() }
+            sharing.activate()
+            try await until("approved recipient") { sharing.approvals.contains(approval) }
+            try sharing.select(approval, enabled: true, start: .distantPast)
+            let id = UUID().uuidString.lowercased()
+            try queue.enqueue(Data("init".utf8), accountId: peers.device.accountId, captureId: id, captureKind: "video", sequence: 0, kind: "init")
+            try await until("shared descriptor published") {
+                do {
+                    let detail: Detail = try await api.request("GET", "captures/\(id)")
+                    return detail.recordingEnding == "unknown"
+                } catch let error as APIError where error.status == 404 { return false }
+            }
+            sharing.stopSharing()
+            // Let the normal preparation loop observe the empty recipient selection.
+            try await Task.sleep(for: .milliseconds(900))
+            if restart {
+                for task in sharing.suspend() { await task.value }
+                sharing = try open(); sharing.activate()
+            }
+            try queue.enqueue(Data("last fragment".utf8), accountId: peers.device.accountId, captureId: id, captureKind: "video", sequence: 1, kind: "media", duration: 1)
+            try queue.finishCapture(accountId: peers.device.accountId, captureId: id, ending: .stopped, expectedObjects: 2)
+            let owner = UploadWorker(api: api, queue: queue, accountId: peers.device.accountId)
+            while let item = queue.next(accountId: peers.device.accountId, captureKind: "video") { try await owner.send(item) }
+            try await until("owner completion after stopping Nearby (restart=\(restart))", timeout: 10) {
+                let detail: Detail = try await api.request("GET", "captures/\(id)")
+                return detail.cloudComplete == true && detail.recordingEnding == "stopped"
+            }
+            for task in sharing.suspend() { await task.value }
+        }
+        print("PASS: owner cloud completion after stopping Nearby, including app restart")
     }
     static func storageChecks(root: URL) throws {
         let budget = try MediaStorageBudget(root: root, limit: 10_000, receivedLimit: 6000)

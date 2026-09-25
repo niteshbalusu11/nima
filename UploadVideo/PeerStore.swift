@@ -159,6 +159,10 @@ actor PeerStore {
         guard try credentials.certificate.verify(authority: credentials.authority).device == device else { throw Self.failure("Invalid nearby credential") }
         return credentials
     }
+    func savedPairing(from sender: RegisteredDevice) -> NearbyPermission? {
+        guard let approval = snapshot().approvals.first(where: { $0.sender == sender && $0.recipient == device }) else { return nil }
+        return state.pairings?[approval.id]
+    }
     func savePairing(_ permission: NearbyPermission) throws {
         guard healthy, state.accessActive, permission.authority == state.credentials?.authority,
               !(state.blockedPairings ?? []).contains(permission.approval.id),

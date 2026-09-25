@@ -113,6 +113,30 @@ struct SignedMediaCheck {
         try expect(photoReceipt.recorderAccountId == recorder.accountId && photoReceipt.captureId == photo.descriptor.captureId, "Photo ownership changed")
         try await store.receiveCompletion(photoCompletion, descriptor: photoDescriptor, grant: photoGrant, sender: recorder)
         try expect(try await store.completed(captureHash: photo.digest) == .stopped, "Photo not complete")
+        // Deleting must work when either the combined or received allowance is full.
+        for area in [MediaStorageBudget.Area.owner, .received] {
+            let root = config.root.appendingPathComponent("full-" + UUID().uuidString)
+            let budget = try MediaStorageBudget(root: root, limit: 100_000, receivedLimit: 100_000)
+            let receivedRoot = root.appendingPathComponent("ReceivedMedia")
+            let full = try ReceivedMediaStore(peers: b, root: receivedRoot, budget: budget)
+            guard case .writing(let id) = try await full.begin(descriptor: photoDescriptor, grant: photoGrant, manifest: photoManifest, sender: recorder) else { fatalError() }
+            try await full.append(photoBytes, to: id); _ = try await full.commit(id)
+            let saved = try await full.savedObject(captureHash: photo.digest, sequence: 0)!
+            let files = FileManager.default.enumerator(at: receivedRoot, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])!.allObjects as! [URL]
+            let used = try files.reduce(0) { total, file in
+                let values = try file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+                return total + (values.isRegularFile == true ? values.fileSize ?? 0 : 0)
+            }
+            let reservation = try budget.reserve(100_000 - used, area: area)
+            defer { try? budget.finish(reservation, paths: []) }
+            try await full.remove(captureHash: photo.digest)
+            try expect(!FileManager.default.fileExists(atPath: saved.file.path), "Full storage prevented deletion")
+            try expect(try await full.captures().isEmpty, "Deletion left storage unusable")
+            let reopened = try ReceivedMediaStore(peers: b, root: receivedRoot, budget: budget)
+            try expect(try await reopened.captures().isEmpty, "Deleted media returned after restart")
+            try await rejects { _ = try await reopened.begin(descriptor: photoDescriptor, grant: photoGrant, manifest: photoManifest, sender: recorder) }
+        }
+        print("PASS: deletion at full combined and received budgets, healthy store and durable tombstone")
         func begin(_ sequence: Int, manifest: MediaRecords.Envelope? = nil) async throws -> ReceivedMediaStore.Admission {
             try await store.begin(descriptor: descriptor, grant: grant, manifest: manifest ?? manifests[sequence], sender: recorder)
         }
