@@ -37,6 +37,12 @@ def main():
         return
 
     height, width = frame.shape[:2]
+    if max(height, width) > 1600:
+        scale = 1600 / max(height, width)
+        frame = cv2.resize(
+            frame, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA
+        )
+        height, width = frame.shape[:2]
     try:
         detector.setInputSize((width, height))
         _, faces = detector.detect(frame)

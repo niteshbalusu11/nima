@@ -94,6 +94,18 @@ CREATE TABLE relay_grant_objects (
 	`
 CREATE TABLE nearby_authority (id INTEGER PRIMARY KEY CHECK(id=1), seed BLOB NOT NULL CHECK(length(seed)=32));
 `,
+	`
+ALTER TABLE face_groups ADD COLUMN model_version TEXT;
+CREATE TABLE face_research_captures (
+ capture_id TEXT PRIMARY KEY REFERENCES captures(id),
+ confirmed_by TEXT NOT NULL REFERENCES accounts(id), confirmed_at INTEGER NOT NULL);
+CREATE TABLE face_people (
+ id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
+ reference_group_id TEXT NOT NULL UNIQUE REFERENCES face_groups(id),
+ display_name TEXT NOT NULL, consent_confirmed_by TEXT NOT NULL REFERENCES accounts(id),
+ consent_confirmed_at INTEGER NOT NULL);
+CREATE INDEX face_people_account ON face_people(account_id);
+`,
 }
 
 // Run before serving requests. The write lock also serializes startup with CLI commands.

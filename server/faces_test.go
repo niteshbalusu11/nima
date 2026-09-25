@@ -58,6 +58,10 @@ func TestFaceProcessingGroupsWithinCaptureAndDeletesCrops(t *testing.T) {
 	if err := h.db.QueryRow("SELECT COUNT(*),MAX(sightings) FROM face_groups WHERE capture_id=?", id).Scan(&groups, &sightings); err != nil || groups != 1 || sightings != 2 {
 		t.Fatalf("wrong grouping: %d groups, %d sightings, %v", groups, sightings, err)
 	}
+	var version string
+	if err := h.db.QueryRow("SELECT model_version FROM face_groups WHERE capture_id=?", id).Scan(&version); err != nil || version != faceModelVersion {
+		t.Fatalf("worker did not tag its model: %q %v", version, err)
+	}
 	s, b = request(t, h.server.URL, "GET", "/super-admin/captures/"+id+"/faces", member, nil)
 	mustStatus(t, 403, s, b)
 	s, b = request(t, h.server.URL, "GET", "/super-admin/captures/"+id+"/faces", super.Token, nil)

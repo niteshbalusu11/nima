@@ -19,6 +19,9 @@ import (
 const maxFaceGroups = 128
 const faceMatchThreshold = 0.45
 
+// Pinned YuNet/SFace artifacts, alignCrop, L2 normalization, and 160px crop.
+const faceModelVersion = "yunet-8f2383e4-sface-0ba9fbfa-alignnorm-v1"
+
 type detectedFace struct {
 	JPEG    []byte
 	Feature []float64
@@ -143,7 +146,7 @@ func (a *api) saveFaces(ctx context.Context, job faceJob, faces []detectedFace) 
 	if err := tx.QueryRowContext(ctx, "SELECT deleted_at FROM captures WHERE id=?", job.CaptureID).Scan(&deleted); err != nil || deleted.Valid {
 		return err
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT id,embedding FROM face_groups WHERE capture_id=?", job.CaptureID)
+	rows, err := tx.QueryContext(ctx, "SELECT id,embedding FROM face_groups WHERE capture_id=? AND model_version=?", job.CaptureID, faceModelVersion)
 	if err != nil {
 		return err
 	}
@@ -170,6 +173,10 @@ func (a *api) saveFaces(ctx context.Context, job faceJob, faces []detectedFace) 
 	if err != nil {
 		return err
 	}
+	var groupCount int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM face_groups WHERE capture_id=?", job.CaptureID).Scan(&groupCount); err != nil {
+		return err
+	}
 	used := map[string]bool{}
 	for _, face := range faces {
 		if len(face.JPEG) == 0 || len(face.JPEG) > 100<<10 || len(face.Feature) != 128 {
@@ -188,7 +195,7 @@ func (a *api) saveFaces(ctx context.Context, job faceJob, faces []detectedFace) 
 			used[best] = true
 			continue
 		}
-		if len(groups) >= maxFaceGroups {
+		if groupCount >= maxFaceGroups {
 			continue
 		}
 		encoded, err := json.Marshal(face.Feature)
@@ -200,10 +207,11 @@ func (a *api) saveFaces(ctx context.Context, job faceJob, faces []detectedFace) 
 		if when <= 0 && job.Kind == "media" {
 			when = int64(job.Sequence-1) * 1000
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO face_groups(id,capture_id,embedding,jpeg,first_seen_ms) VALUES(?,?,?,?,?)", id, job.CaptureID, string(encoded), face.JPEG, when); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO face_groups(id,capture_id,embedding,jpeg,first_seen_ms,model_version) VALUES(?,?,?,?,?,?)", id, job.CaptureID, string(encoded), face.JPEG, when, faceModelVersion); err != nil {
 			return err
 		}
 		groups = append(groups, group{id, face.Feature})
+		groupCount++
 		used[id] = true
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO face_jobs(capture_id,sequence,processed_at) VALUES(?,?,?)", job.CaptureID, job.Sequence, time.Now().Unix()); err != nil {
@@ -237,33 +245,100 @@ func (a *api) listFaces(w http.ResponseWriter, r *http.Request) {
 	if !a.requireSuperAdmin(w, r) {
 		return
 	}
-	rows, err := a.db.QueryContext(r.Context(), `SELECT g.id,g.first_seen_ms,g.sightings FROM face_groups g
-		JOIN captures c ON c.id=g.capture_id WHERE g.capture_id=? AND c.deleted_at IS NULL
-		ORDER BY g.first_seen_ms,g.id`, r.PathValue("id"))
+	tx, err := a.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		failure(w, 503, "Unavailable")
 		return
 	}
-	defer rows.Close()
+	defer tx.Rollback()
+	var owner string
+	var active, optedIn bool
+	err = tx.QueryRowContext(r.Context(), `SELECT c.account_id,a.active,
+		EXISTS(SELECT 1 FROM face_research_captures rc WHERE rc.capture_id=c.id)
+		FROM captures c JOIN accounts a ON a.id=c.account_id
+		WHERE c.id=? AND c.deleted_at IS NULL`, r.PathValue("id")).Scan(&owner, &active, &optedIn)
+	if errors.Is(err, sql.ErrNoRows) {
+		failure(w, 404, "Not found")
+		return
+	}
+	if err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	status := faceResearchStatus{Status: "disabled"}
+	if optedIn {
+		status.Status = "enabled"
+	}
+	status.OptInAllowed = owner == researchAccountID() && owner != "" && active
+	status.EnrollmentAllowed = optedIn && status.OptInAllowed
+	status.MatchingEnabled = status.EnrollmentAllowed && calibratedFaceResearch()
+	rows, err := tx.QueryContext(r.Context(), `SELECT g.id,g.first_seen_ms,g.sightings,g.embedding,
+		COALESCE(g.model_version,''),COALESCE(p.display_name,'')
+		FROM face_groups g LEFT JOIN face_people p ON p.reference_group_id=g.id
+		WHERE g.capture_id=? ORDER BY g.first_seen_ms,g.id`, r.PathValue("id"))
+	if err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
 	type face struct {
-		ID          string `json:"id"`
-		FirstSeenMS int64  `json:"first_seen_ms"`
-		Sightings   int    `json:"sightings"`
+		ID            string             `json:"id"`
+		FirstSeenMS   int64              `json:"first_seen_ms"`
+		Sightings     int                `json:"sightings"`
+		Recognition   *recognitionResult `json:"recognition,omitempty"`
+		ReferenceName string             `json:"reference_name,omitempty"`
+		Enrollable    bool               `json:"enrollable"`
+		feature       []float64
+		version       string
 	}
 	faces := []face{}
 	for rows.Next() {
 		var f face
-		if err := rows.Scan(&f.ID, &f.FirstSeenMS, &f.Sightings); err != nil {
+		var encoded string
+		if err := rows.Scan(&f.ID, &f.FirstSeenMS, &f.Sightings, &encoded, &f.version, &f.ReferenceName); err != nil {
+			rows.Close()
 			failure(w, 503, "Unavailable")
 			return
 		}
+		_ = json.Unmarshal([]byte(encoded), &f.feature)
 		faces = append(faces, f)
 	}
-	if rows.Err() != nil {
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
 		failure(w, 503, "Unavailable")
 		return
 	}
-	jsonResponse(w, 200, map[string]any{"faces": faces})
+	if !status.EnrollmentAllowed {
+		for i := range faces {
+			faces[i].ReferenceName = ""
+		}
+	} else {
+		var candidates []researchCandidate
+		if status.MatchingEnabled {
+			candidates, err = loadResearchCandidates(r.Context(), tx, owner)
+			if err != nil {
+				failure(w, 503, "Unavailable")
+				return
+			}
+		}
+		for i := range faces {
+			faces[i].Enrollable = faces[i].ReferenceName == "" && faces[i].version == faceModelVersion && validFaceVector(faces[i].feature)
+			result := recognitionResult{State: "unavailable"}
+			if status.MatchingEnabled && faces[i].ReferenceName == "" {
+				threshold, margin, _ := faceResearchThresholds()
+				result = selectFaceCandidate(faces[i].feature, r.PathValue("id"), faces[i].version,
+					candidates, threshold, margin)
+			}
+			if faces[i].ReferenceName == "" {
+				faces[i].Recognition = &result
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	jsonResponse(w, 200, map[string]any{"faces": faces, "research": status})
 }
 
 func (a *api) faceImage(w http.ResponseWriter, r *http.Request) {

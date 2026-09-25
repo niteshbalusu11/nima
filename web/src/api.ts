@@ -21,6 +21,7 @@ export async function api<T>(method: string, path: string, token?: string, body?
     const error = await response.json().catch(() => null) as { error?: string } | null
     throw new APIError(response.status, error?.error || 'Try again')
   }
+  if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }
 

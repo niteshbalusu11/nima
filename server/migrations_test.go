@@ -121,6 +121,36 @@ func TestFaceMigrationPreservesExistingCaptures(t *testing.T) {
 	}
 }
 
+func TestResearchMigrationPreservesLegacyAnonymousFaces(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "prior-research.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := migrate(db, migrations[:5]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO accounts(id,created_at) VALUES('owner',1)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO captures(id,account_id,kind,created_at) VALUES('capture','owner','photo',1)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO face_groups(id,capture_id,embedding,jpeg,first_seen_ms) VALUES('legacy','capture','[]',X'00',0)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db, migrations); err != nil {
+		t.Fatal(err)
+	}
+	var version sql.NullString
+	if err := db.QueryRow("SELECT model_version FROM face_groups WHERE id='legacy'").Scan(&version); err != nil || version.Valid {
+		t.Fatalf("legacy face was changed: %+v %v", version, err)
+	}
+	if err := migrate(db, migrations); err != nil {
+		t.Fatalf("repeat migration: %v", err)
+	}
+}
+
 func TestMigrationsUpgradeRollbackAndNewerVersion(t *testing.T) {
 	db, err := openDB(filepath.Join(t.TempDir(), "upgrade.sqlite"))
 	if err != nil {
