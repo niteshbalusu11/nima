@@ -31,6 +31,7 @@ final class AppModel: ObservableObject {
     private var uploadErrors: [String: String] = [:]
     private var active = false
     private var reviewing = false
+    private var peers: PeerStore?
     private var lastInviteAttempt = Date.distantPast
     var api: API { API(baseURL: API.configuredURL, token: session?.token) }
     init() {
@@ -86,6 +87,15 @@ final class AppModel: ObservableObject {
         stopUploads()
     }
     #if DEBUG
+    func peerStore() throws -> PeerStore {
+        guard let current = session else { throw APIError(status: 401, message: "Sign in first") }
+        if let peers, peers.sessionToken == current.token, peers.device.id == current.deviceId, peers.baseURL == api.baseURL { return peers }
+        let identity = try DeviceIdentity.loadOrCreate(for: current, at: api.baseURL)
+        let device = try identity.registeredDevice(for: current)
+        let store = try PeerStore(api: api, session: current, device: device)
+        peers = store
+        return store
+    }
     func registerSharingDevice() async throws {
         guard let current = session else { throw APIError(status: 401, message: "Sign in first") }
         let identity = try DeviceIdentity.loadOrCreate(for: current, at: api.baseURL)

@@ -301,4 +301,4 @@ The feature is complete when:
 - App/server restarts preserve every acknowledged local/cloud object and resume authorized work while execution is available.
 - The minimal UI distinguishes nearby saved copies, pending cloud work and fully verified coverage; physical-device results and actual storage tests are recorded in the device checklist.
 
-No implementation checks above have been run by this documentation-only planning task. The first engineering action is milestone 0, followed by the identity/protocol work; no further product clarification is required to begin that bounded spike.
+Implementation status (2026-09-24): [the feasibility probes](nearby-feasibility.md) pass loopback TLS and local RustFS integrity/concurrency checks. [Device identities and peer consent](nearby-identities.md) now include registration, native directional approval, a durable offline cache, and registered-key TLS checks. Two-phone radio behavior and actual Tigris storage remain open gates. The next code slice is signed media records and durable recipient storage; no nearby camera-media replication or delegated upload is enabled yet.

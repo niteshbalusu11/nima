@@ -11,14 +11,16 @@ import (
 const maxPeerApprovals = 64
 
 type peerApproval struct {
-	ID        string `json:"id"`
-	Sender    device `json:"sender"`
-	Recipient device `json:"recipient"`
-	CreatedAt int64  `json:"created_at"`
+	ID            string `json:"id"`
+	Sender        device `json:"sender"`
+	Recipient     device `json:"recipient"`
+	CreatedAt     int64  `json:"created_at"`
+	SenderName    string `json:"sender_name"`
+	RecipientName string `json:"recipient_name"`
 }
 
 const approvalSelect = `SELECT p.id,s.id,s.account_id,s.signing_public_key,s.tls_public_key,
- d.id,d.account_id,d.signing_public_key,d.tls_public_key,p.created_at
+ d.id,d.account_id,d.signing_public_key,d.tls_public_key,p.created_at,sa.name,da.name
  FROM peer_approvals p JOIN devices s ON s.id=p.sender_device_id JOIN devices d ON d.id=p.recipient_device_id
  JOIN accounts sa ON sa.id=s.account_id JOIN accounts da ON da.id=d.account_id
  WHERE p.revoked_at IS NULL AND s.revoked_at IS NULL AND d.revoked_at IS NULL AND sa.active=1 AND da.active=1`
@@ -26,7 +28,7 @@ const approvalSelect = `SELECT p.id,s.id,s.account_id,s.signing_public_key,s.tls
 func scanApproval(row interface{ Scan(...any) error }) (peerApproval, error) {
 	var p peerApproval
 	err := row.Scan(&p.ID, &p.Sender.ID, &p.Sender.AccountID, &p.Sender.SigningPublicKey, &p.Sender.TLSPublicKey,
-		&p.Recipient.ID, &p.Recipient.AccountID, &p.Recipient.SigningPublicKey, &p.Recipient.TLSPublicKey, &p.CreatedAt)
+		&p.Recipient.ID, &p.Recipient.AccountID, &p.Recipient.SigningPublicKey, &p.Recipient.TLSPublicKey, &p.CreatedAt, &p.SenderName, &p.RecipientName)
 	return p, err
 }
 
@@ -47,9 +49,9 @@ func (a *api) createPeerInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	var target string
-	err := tx.QueryRowContext(r.Context(), `SELECT d.id FROM devices d JOIN accounts a ON a.id=d.account_id
- WHERE d.id=? AND d.account_id=? AND d.id!=? AND d.revoked_at IS NULL AND a.active=1`, input.RecipientDeviceID, input.RecipientAccountID, sender.ID).Scan(&target)
+	var target, name string
+	err := tx.QueryRowContext(r.Context(), `SELECT d.id,a.name FROM devices d JOIN accounts a ON a.id=d.account_id
+ WHERE d.id=? AND d.account_id=? AND d.id!=? AND d.revoked_at IS NULL AND a.active=1`, input.RecipientDeviceID, input.RecipientAccountID, sender.ID).Scan(&target, &name)
 	if errors.Is(err, sql.ErrNoRows) {
 		failure(w, 404, "Recipient unavailable")
 		return
@@ -80,7 +82,62 @@ func (a *api) createPeerInvitation(w http.ResponseWriter, r *http.Request) {
 		failure(w, 503, "Unavailable")
 		return
 	}
-	jsonResponse(w, 201, invite)
+	jsonResponse(w, 201, struct {
+		invitation
+		RecipientName string `json:"recipient_name"`
+	}{invite, name})
+}
+
+func (a *api) previewPeerInvitation(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Token string `json:"token"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	if _, ok := decodeURLBytes(input.Token, 32); !ok {
+		failure(w, 400, "Invalid peer invitation")
+		return
+	}
+	tx, recipient, ok := a.deviceTransaction(w, r, true)
+	if !ok {
+		return
+	}
+	defer tx.Rollback()
+	var preview struct {
+		Sender     device `json:"sender"`
+		SenderName string `json:"sender_name"`
+		ExpiresAt  int64  `json:"expires_at"`
+	}
+	var accepted sql.NullString
+	err := tx.QueryRowContext(r.Context(), `SELECT d.id,d.account_id,d.signing_public_key,d.tls_public_key,a.name,i.expires_at,i.approval_id
+ FROM peer_invitations i JOIN devices d ON d.id=i.sender_device_id JOIN accounts a ON a.id=d.account_id
+ WHERE i.hash=? AND i.recipient_device_id=? AND d.revoked_at IS NULL AND a.active=1`, digest(input.Token), recipient.ID).
+		Scan(&preview.Sender.ID, &preview.Sender.AccountID, &preview.Sender.SigningPublicKey, &preview.Sender.TLSPublicKey, &preview.SenderName, &preview.ExpiresAt, &accepted)
+	if errors.Is(err, sql.ErrNoRows) {
+		failure(w, 404, "Peer invitation unavailable")
+		return
+	}
+	if err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	if preview.ExpiresAt <= time.Now().Unix() {
+		failure(w, 410, "Peer invitation expired")
+		return
+	}
+	if accepted.Valid {
+		_, err = scanApproval(tx.QueryRowContext(r.Context(), approvalSelect+" AND p.id=?", accepted.String))
+		if errors.Is(err, sql.ErrNoRows) {
+			failure(w, 410, "Peer approval revoked")
+			return
+		}
+		if err != nil {
+			failure(w, 503, "Unavailable")
+			return
+		}
+	}
+	jsonResponse(w, 200, preview)
 }
 
 func (a *api) acceptPeerInvitation(w http.ResponseWriter, r *http.Request) {

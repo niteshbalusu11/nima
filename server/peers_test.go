@@ -204,3 +204,53 @@ func TestPeerApprovalSnapshotLimit(t *testing.T) {
 		t.Fatal("partial approval committed after limit")
 	}
 }
+
+func TestPeerInvitationPreviewIsRecipientOnlyAndDoesNotGrantConsent(t *testing.T) {
+	h := setup(t)
+	a, ownerA := enrollTest(t, h)
+	b, ownerB := enrollTest(t, h)
+	c, ownerC := enrollTest(t, h)
+	deviceA := registerTest(t, h, a, ownerA, newTestDeviceKeys(t))
+	deviceB := registerTest(t, h, b, ownerB, newTestDeviceKeys(t))
+	registerTest(t, h, c, ownerC, newTestDeviceKeys(t))
+	otherB := sessionTest(t, h, ownerB)
+	registerTest(t, h, otherB, ownerB, newTestDeviceKeys(t))
+	execTest(t, h.db, "UPDATE accounts SET name='Recorder' WHERE id=?", ownerA)
+	invite := peerInvitationTest(t, h, a, deviceB)
+	for _, wrong := range []string{a, c, otherB} {
+		s, body := request(t, h.server.URL, "POST", "/peer-invitations/preview", wrong, map[string]string{"token": invite.Token})
+		mustStatus(t, 404, s, body)
+	}
+	s, body := request(t, h.server.URL, "POST", "/peer-invitations/preview", b, map[string]string{"token": invite.Token})
+	mustStatus(t, 200, s, body)
+	var preview struct {
+		Sender     device `json:"sender"`
+		SenderName string `json:"sender_name"`
+		ExpiresAt  int64  `json:"expires_at"`
+	}
+	if err := json.Unmarshal(body, &preview); err != nil || preview.Sender != deviceA || preview.SenderName != "Recorder" || preview.ExpiresAt != invite.ExpiresAt {
+		t.Fatalf("invalid invitation preview: %s (%v)", body, err)
+	}
+	if len(approvalListTest(t, h, b)) != 0 {
+		t.Fatal("preview granted consent")
+	}
+	s, body = request(t, h.server.URL, "POST", "/peer-invitations/accept", b, map[string]string{"token": invite.Token})
+	mustStatus(t, 201, s, body)
+	approval := approvalListTest(t, h, b)[0]
+	if approval.SenderName != "Recorder" {
+		t.Fatal("snapshot omitted sender name")
+	}
+	s, body = request(t, h.server.URL, "DELETE", "/peer-approvals/"+approval.ID, b, nil)
+	mustStatus(t, 200, s, body)
+	s, body = request(t, h.server.URL, "POST", "/peer-invitations/preview", b, map[string]string{"token": invite.Token})
+	mustStatus(t, 410, s, body)
+	expired := peerInvitationTest(t, h, a, deviceB)
+	execTest(t, h.db, "UPDATE peer_invitations SET expires_at=0 WHERE hash=?", digest(expired.Token))
+	s, body = request(t, h.server.URL, "POST", "/peer-invitations/preview", b, map[string]string{"token": expired.Token})
+	mustStatus(t, 410, s, body)
+	active := peerInvitationTest(t, h, a, deviceB)
+	s, body = request(t, h.server.URL, "DELETE", "/devices/"+deviceA.ID, a, nil)
+	mustStatus(t, 200, s, body)
+	s, body = request(t, h.server.URL, "POST", "/peer-invitations/preview", b, map[string]string{"token": active.Token})
+	mustStatus(t, 404, s, body)
+}

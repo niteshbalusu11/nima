@@ -6,7 +6,7 @@ import Security
 @preconcurrency import Network
 
 // Development-only transport experiment. Transfers synthetic bytes, never camera media.
-// Fixture identities are imported into memory; production device enrollment is separate work.
+// Uses either isolated fixtures or the registered identity and cached directional consent.
 @MainActor
 final class NearbyProbe: ObservableObject {
     enum Event { case listening(UInt16), completed, rejectedPeer, failed(String) }
@@ -18,6 +18,9 @@ final class NearbyProbe: ObservableObject {
     var onEvent: ((Event) -> Void)?
     private var identity: SecIdentity?
     private var peerCertificate = Data()
+    private var peerPublicKey = Data()
+    private var registeredPeer: (store: PeerStore, approval: PeerApproval, sending: Bool)?
+    private var approvalTask: Task<Void, Never>?
     private var listener: NWListener?
     private var browser: NWBrowser?
     private var connection: NWConnection?
@@ -47,12 +50,34 @@ final class NearbyProbe: ObservableObject {
         stop()
         identity = (value as! SecIdentity)
         peerCertificate = fixture.peerCertificate
+        peerPublicKey = Data(); registeredPeer = nil
         identityLabel = fixture.label
         status = "Ready"
     }
 
+    func load(registeredIdentity: SecIdentity, approval: PeerApproval, store: PeerStore) throws {
+        let device = store.device
+        guard approval.sender == device || approval.recipient == device else { throw ProbeError("Approval belongs to another phone") }
+        var certificate: SecCertificate?
+        guard SecIdentityCopyCertificate(registeredIdentity, &certificate) == errSecSuccess, let certificate,
+              Self.publicKey(certificate) == DeviceIdentity.decodeURL(device.tlsPublicKey) else { throw ProbeError("Nearby identity does not match this phone") }
+        let sending = approval.sender == device
+        let peer = sending ? approval.recipient : approval.sender
+        guard let key = DeviceIdentity.decodeURL(peer.tlsPublicKey), peer.isValid else { throw ProbeError("Invalid approved identity") }
+        stop()
+        identity = registeredIdentity; peerCertificate = Data(); peerPublicKey = key
+        registeredPeer = (store, approval, sending)
+        identityLabel = "Registered device"
+        status = "Ready"
+    }
+
+    nonisolated private static func publicKey(_ certificate: SecCertificate) -> Data? {
+        guard let key = SecCertificateCopyKey(certificate) else { return nil }
+        return SecKeyCopyExternalRepresentation(key, nil) as Data?
+    }
+
     private func parameters() throws -> NWParameters {
-        guard let identity, let local = sec_identity_create(identity), !peerCertificate.isEmpty else {
+        guard let identity, let local = sec_identity_create(identity), !peerCertificate.isEmpty || !peerPublicKey.isEmpty else {
             throw ProbeError("Import a test identity first")
         }
         let tls = NWProtocolTLS.Options()
@@ -60,21 +85,38 @@ final class NearbyProbe: ObservableObject {
         sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv13)
         sec_protocol_options_set_peer_authentication_required(tls.securityProtocolOptions, true)
         let approved = peerCertificate
+        let approvedKey = peerPublicKey
+        let registered = registeredPeer
         let generation = run
+        if let registered {
+            approvalTask?.cancel()
+            approvalTask = Task { [weak self] in
+                for await snapshot in await registered.store.updates() {
+                    guard !Task.isCancelled, let self, self.run == generation else { return }
+                    guard snapshot.approvals.contains(registered.approval) else {
+                        self.fail("Sharing approval was removed", generation); return
+                    }
+                }
+            }
+        }
         sec_protocol_options_set_verify_block(tls.securityProtocolOptions, { @Sendable [weak self] _, remote, complete in
+            let verification = Verification(complete: complete)
             let trust = sec_trust_copy_ref(remote).takeRetainedValue()
             let certificates = SecTrustCopyCertificateChain(trust) as? [SecCertificate]
-            // Exact, preapproved certificate pin. TLS proves possession of its private key.
-            // No trust-all fallback, system-name matching, or shared identity between peers.
-            let matches = certificates?.first.map { SecCertificateCopyData($0) as Data == approved } ?? false
-            complete(matches)
-            if !matches {
-                // The verification callback runs on .main. Publish rejection before
-                // a queued connection failure can clear this run.
-                MainActor.assumeIsolated {
-                    guard let self, self.run == generation else { return }
-                    self.stop(); self.status = "Peer certificate not approved"; self.onEvent?(.rejectedPeer)
+            // TLS proves private-key possession. Names and self-signed certificate
+            // dates do not confer trust; only the pinned key and active consent do.
+            let matches = certificates?.first.map {
+                registered == nil ? SecCertificateCopyData($0) as Data == approved : Self.publicKey($0) == approvedKey
+            } ?? false
+            Task { @MainActor in
+                var allowed = matches
+                if let registered {
+                    let snapshot = await registered.store.snapshot()
+                    allowed = allowed && snapshot.approvals.contains(registered.approval)
                 }
+                guard let self, self.run == generation else { verification.complete(false); return }
+                verification.complete(allowed)
+                if !allowed { self.stop(); self.status = "Peer identity not approved"; self.onEvent?(.rejectedPeer) }
             }
         }, .main)
         let parameters = NWParameters(tls: tls, tcp: NWProtocolTCP.Options())
@@ -84,6 +126,7 @@ final class NearbyProbe: ObservableObject {
 
     func listen(localOnly: Bool = false) throws {
         stop()
+        guard registeredPeer?.sending != true else { throw ProbeError("This approval only allows sending") }
         let generation = run
         let parameters = try parameters()
         if localOnly { parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any) }
@@ -115,6 +158,7 @@ final class NearbyProbe: ObservableObject {
 
     func browse() throws {
         stop()
+        guard registeredPeer?.sending != false else { throw ProbeError("This approval only allows receiving") }
         let generation = run
         let browser = NWBrowser(for: .bonjour(type: Self.service, domain: nil), using: try parameters())
         self.browser = browser
@@ -140,6 +184,7 @@ final class NearbyProbe: ObservableObject {
     // Loopback exercises the exact TLS and byte-transfer implementation without Bonjour/radio claims.
     func connectLoopback(port: UInt16) throws {
         stop()
+        guard registeredPeer?.sending != false else { throw ProbeError("This approval only allows receiving") }
         guard let port = NWEndpoint.Port(rawValue: port) else { throw ProbeError("Invalid port") }
         start(NWConnection(host: "127.0.0.1", port: port, using: try parameters()), sending: true, run)
     }
@@ -233,6 +278,7 @@ final class NearbyProbe: ObservableObject {
     }
     func stop() {
         run = UUID()
+        approvalTask?.cancel(); approvalTask = nil
         timeout?.cancel(); timeout = nil
         browser?.cancel(); browser = nil
         listener?.cancel(); listener = nil
@@ -244,5 +290,8 @@ final class NearbyProbe: ObservableObject {
         let errorDescription: String?
         init(_ message: String) { errorDescription = message }
     }
+    // Security's completion is designed for asynchronous verification but is not
+    // annotated Sendable. Transfer it to one task, which invokes it exactly once.
+    private struct Verification: @unchecked Sendable { let complete: (Bool) -> Void }
 }
 #endif

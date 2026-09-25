@@ -358,7 +358,7 @@ private struct ProfileView: View {
                 }.disabled(!loaded || saving || model.managingCapture)
                 #if DEBUG
                 Section("Development") {
-                    NavigationLink("Sharing identity") { DeviceSetupView(model: model) }
+                    NavigationLink("Nearby setup") { NearbySettingsView(model: model) }
                         .disabled(model.recording || model.stopping || model.preparingCapture || model.managingCapture)
                     NavigationLink("Nearby transport probe") { NearbyProbeView(model: model) }
                         .disabled(model.recording || model.stopping || model.preparingCapture || model.managingCapture)
