@@ -13,6 +13,10 @@ Foreground operation is supported. Keep the app open while receiving or uploadin
 
 ## Install and pair two phones
 
+For the current two-phone pilot, Debug builds are pinned to `https://689a-50-222-161-203.ngrok-free.app`, which reaches the Go server and RustFS on Nitesh's Mac. Pull this branch and build Debug with your own development signing; no `Local.xcconfig` is needed. The pin takes precedence over an existing local override. Use a separate enrollment invite for each phone, then continue at step 4 below. The Mac and tunnel must stay running. If the tunnel URL changes, update the Debug pin and rebuild both apps. Release still uses the deployed API.
+
+Steps 1–3 describe setting up a different local server; remove the temporary Debug endpoint pin before using a local override.
+
 1. Run this branch's Go server against RustFS for the first pilot. Set `NEARBY_RELAY_ENABLED=true` in its environment; the default is **false**. This flag admits delegated cloud requests, not enrollment or ordinary owner uploads. The server applies additive migrations through version 7 at startup.
 2. For a local Mac server, edit the private `server/.env`: use `LISTEN_ADDR=0.0.0.0:8080`, `STORAGE_BIND_IP=0.0.0.0`, and `S3_PUBLIC_ENDPOINT=http://YOUR_MAC_LAN_IP:9000`, keeping `S3_ENDPOINT=http://127.0.0.1:9000`. Start with `./tools/start-local.sh`. Both phones must be able to reach the API and the signed storage URL when testing cloud upload.
 3. For Debug builds, put `API_BASE_URL = http:/$()/YOUR_MAC_LAN_IP:8080` in the ignored `UploadVideo/Configuration/Local.xcconfig`. Open `UploadVideo.xcodeproj`, choose the `UploadVideo` scheme, and run on each iPhone using valid development signing. Xcode installation requires Developer Mode. Both builds must use exactly the same API URL.
