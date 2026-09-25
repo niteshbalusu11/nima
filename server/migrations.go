@@ -96,6 +96,9 @@ CREATE TABLE relay_grant_objects (
  PRIMARY KEY(grant_id,sequence),
  FOREIGN KEY(capture_id,sequence) REFERENCES objects(capture_id,sequence) ON DELETE CASCADE);
 `,
+	`
+CREATE TABLE nearby_authority (id INTEGER PRIMARY KEY CHECK(id=1), seed BLOB NOT NULL CHECK(length(seed)=32));
+`,
 }
 
 // Run before serving requests. The write lock also serializes startup with CLI commands.

@@ -5,7 +5,7 @@ export SIGNED_MEDIA_GOLDEN="$PWD/server/testdata/signed-media-v1.json"
 media_tmp=$(mktemp -d)
 trap 'rm -rf "$media_tmp"' EXIT
 swiftc -swift-version 6 -D DEBUG -parse-as-library \
-    UploadVideo/API.swift UploadVideo/DeviceIdentity.swift UploadVideo/PeerStore.swift \
+    UploadVideo/API.swift UploadVideo/DeviceIdentity.swift UploadVideo/NearbyPermission.swift UploadVideo/PeerStore.swift \
     UploadVideo/MediaRecords.swift UploadVideo/ReceivedMediaStore.swift UploadVideo/MediaStorageBudget.swift UploadVideo/UploadQueue.swift \
     UploadVideo/OwnerMediaRecords.swift tools/SignedMediaCheck.swift -o "$media_tmp/signed-media-check"
 cd server

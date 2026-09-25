@@ -1,19 +1,26 @@
 import SwiftUI
 import AVKit
+import DeviceDiscoveryUI
+import WiFiAware
+@preconcurrency import Network
 
 struct NearbyView: View {
     @ObservedObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @State private var message: String?
     var body: some View {
         NavigationStack {
             Group {
-                if let nearby = model.nearby { NearbyControls(model: model, nearby: nearby) }
-                else {
-                    Form {
-                        Section {
-                            NavigationLink("Set up nearby") { NearbySettingsView(model: model) }
-                        } footer: { Text("Approve people while online. Then share nearby without internet.") }
+                if #available(iOS 26.0, *), WiFiAwareRadio.supported {
+                    if let nearby = model.nearby { NearbyControls(model: model, nearby: nearby) }
+                    else {
+                        VStack(spacing: 16) {
+                            Text(message ?? "Preparing Nearby")
+                            Button("Set up Nearby") { Task { await prepare() } }
+                        }
                     }
+                } else {
+                    ContentUnavailableView("Nearby unavailable", systemImage: "wifi", description: Text("Nearby needs iOS 26 and a supported iPhone. Camera and cloud backup are still available."))
                 }
             }
             .navigationTitle("Nearby").navigationBarTitleDisplayMode(.inline)
@@ -21,63 +28,146 @@ struct NearbyView: View {
                 Button("Done") { dismiss() }.disabled(model.nearby?.receiving != nil)
             } }
         }
-        .task { do { if model.session?.deviceId != nil { try model.configureNearby() } } catch { model.message = "Nearby setup unavailable" } }
+        .task { await prepare() }
+    }
+    private func prepare() async {
+        guard #available(iOS 26.0, *), WiFiAwareRadio.supported else { return }
+        do {
+            if model.session?.deviceId == nil { try await model.registerSharingDevice() }
+            else { try model.configureNearby() }
+        } catch { message = error.localizedDescription }
     }
 }
 
+@available(iOS 26.0, *)
 private struct NearbyControls: View {
     @ObservedObject var model: AppModel
     @ObservedObject var nearby: NearbySharing
+    @State private var pairing = false
+    @State private var joining = false
+    @State private var ready = false
     @State private var error: String?
     var body: some View {
         Form {
-            Section {
-                ForEach(nearby.approvals.filter { $0.sender == nearby.peers.device }) { approval in
-                    Toggle(isOn: Binding(get: { nearby.selected.contains(approval.id) }, set: { enabled in
-                        do { try nearby.select(approval, enabled: enabled, start: model.recording ? model.recordingStarted : Date()) }
+            if nearby.receiving == nil {
+                Section {
+                    Button(nearby.sharing ? "Add nearby person" : "Share nearby", systemImage: "antenna.radiowaves.left.and.right") {
+                        do { try nearby.startSharing(start: model.recording ? model.recordingStarted : Date()); pairing = true }
                         catch { self.error = error.localizedDescription }
-                    })) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(name(approval.recipientName))
-                            if let status = nearby.senderStatus[approval.id] { Text(status).font(.caption).foregroundStyle(.secondary) }
+                    }.disabled(!ready)
+                    if nearby.sharing {
+                        if !nearby.sharingStatus.isEmpty { Text(nearby.sharingStatus).font(.caption).foregroundStyle(.secondary) }
+                        Button("Stop sharing", role: .destructive) { nearby.stopSharing() }
+                    } else {
+                        Button("Join nearby", systemImage: "person.2") { joining = true }
+                            .disabled(!ready || model.recording || model.stopping || model.preparingCapture)
+                    }
+                }
+                if nearby.sharing {
+                    Section("Sharing with") {
+                        ForEach(nearby.approvals.filter { nearby.selected.contains($0.id) }) { approval in
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(name(approval.recipientName))
+                                    Text(nearby.senderStatus[approval.id] ?? "Connecting").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button("Stop", role: .destructive) { try? nearby.select(approval, enabled: false, start: Date()) }
+                            }
                         }
                     }
                 }
-                if !nearby.approvals.contains(where: { $0.sender == nearby.peers.device }) { Text("Add people to start sharing").foregroundStyle(.secondary) }
-            } header: { Text("Share new captures") } footer: { Text("Up to three people. Sharing resumes when you reopen the app.") }
-            Section {
-                if let id = nearby.receiving {
-                    Text(name(nearby.approvals.first { $0.id == id }?.senderName ?? ""))
-                    Text(nearby.receiveStatus).font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                Section {
+                    Text(nearby.receiveStatus)
                     Button("Stop receiving", role: .destructive) { Task { try? await model.receiveNearby(from: nil) } }
-                } else {
-                    ForEach(nearby.approvals.filter { $0.recipient == nearby.peers.device }) { approval in
-                        Button("Receive from \(name(approval.senderName))") {
-                            Task {
-                                do { try await model.receiveNearby(from: approval) }
-                                catch { self.error = error.localizedDescription }
-                            }
-                        }.disabled(model.recording || model.stopping || model.preparingCapture)
-                    }
-                    if !nearby.approvals.contains(where: { $0.recipient == nearby.peers.device }) { Text("No approved senders").foregroundStyle(.secondary) }
-                }
-            } header: { Text("Receive") } footer: {
-                Text("Keep this screen open to receive. Saved copies upload to the recorder’s account when a connection is available.")
+                } header: { Text("Receiving") } footer: { Text("Keep Nima open. Saved copies back up to the recorder’s account when online.") }
             }
             Section {
-                NavigationLink { ReceivedCopiesView(nearby: nearby) } label: {
-                    Label("Received · \(nearby.received.count)", systemImage: "photo.on.rectangle")
-                }
+                NavigationLink { ReceivedCopiesView(nearby: nearby) } label: { Label("Received · \(nearby.received.count)", systemImage: "photo.on.rectangle") }
                 NavigationLink("People") { NearbySettingsView(model: model) }
             }
-            if let message = error ?? nearby.message { Section { Text(message).font(.footnote).foregroundStyle(.secondary) } }
+            if let error { Text(error).font(.footnote) }
+            if !ready {
+                Button("Set up Nearby") { Task { await prepare() } }
+                Text("Connect to the internet once to prepare this phone.").font(.footnote).foregroundStyle(.secondary)
+            }
         }
+        .task {
+            await prepare()
+            for await _ in await nearby.peers.updates() {
+                guard !Task.isCancelled else { return }
+                ready = (try? await nearby.peers.pairingCredentials()) != nil
+                if ready { error = nil }
+            }
+        }
+        .sheet(isPresented: $pairing) {
+            NavigationStack {
+                Group {
+                    if nearby.sharingReady { NativePairingView() }
+                    else { ProgressView(nearby.sharingStatus.isEmpty ? "Starting Nearby" : nearby.sharingStatus) }
+                }
+                    .navigationTitle("Share nearby")
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { pairing = false } } }
+            }
+        }
+        .sheet(isPresented: $joining) {
+            NativePickerView { endpoint in
+                joining = false
+                do { try model.joinNearby(endpoint) } catch { self.error = error.localizedDescription }
+            } failed: { text in joining = false; error = text }
+        }
+        .confirmationDialog("Receive from \(name(nearby.consent?.senderName ?? ""))?", isPresented: Binding(
+            get: { nearby.consent != nil }, set: { if !$0 { nearby.resolveConsent(false) } }), titleVisibility: .visible) {
+                Button("Save and back up") { nearby.resolveConsent(true) }
+                Button("Cancel", role: .cancel) { nearby.resolveConsent(false) }
+        } message: { Text("Save their photos and videos on this phone and upload them to their account using your connection.") }
         .interactiveDismissDisabled(nearby.receiving != nil)
-        .onChange(of: nearby.receiving) { _, value in
-            if value == nil { Task { try? await model.receiveNearby(from: nil) } }
-        }
+        .onChange(of: nearby.receiving) { _, value in if value == nil { Task { try? await model.receiveNearby(from: nil) } } }
     }
-    private func name(_ value: String) -> String { value.isEmpty ? "Nearby member" : value }
+    private func prepare() async {
+        do {
+            if (try? await nearby.peers.pairingCredentials()) == nil { try await nearby.peers.refresh() }
+            _ = try await nearby.peers.pairingCredentials(); ready = true; error = nil
+        } catch { ready = false; self.error = error.localizedDescription }
+    }
+    private func name(_ value: String) -> String { value.isEmpty ? "Nima member" : value }
+}
+
+@available(iOS 26.0, *)
+private struct NativePairingView: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> DDDevicePairingViewController {
+        let provider: WAPublisherListener
+        if #available(iOS 26.4, *) { provider = .wifiAware(.addingConnections(from: .userSpecifiedDevices)) }
+        else { provider = .wifiAware(.connecting(to: WAPublishableService.allServices[WiFiAwareRadio.service]!, from: .userSpecifiedDevices)) }
+        return DDDevicePairingViewController(listenerProvider: provider, access: .permanent)
+    }
+    func updateUIViewController(_ controller: DDDevicePairingViewController, context: Context) {}
+}
+
+@available(iOS 26.0, *)
+private struct NativePickerView: UIViewControllerRepresentable {
+    let selected: (NWEndpoint) -> Void
+    let failed: (String) -> Void
+    final class Coordinator { var task: Task<Void, Never>? }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIViewController(context: Context) -> UIViewController {
+        let provider = WiFiAwareRadio.subscriber
+        guard let picker = DDDevicePickerViewController(browseDescriptor: provider.makeDescriptor(), parameters: provider.configureParameters(.tcp), access: .permanent) else {
+            Task { @MainActor in failed("Nearby pairing is unavailable on this phone") }
+            return UIViewController()
+        }
+        context.coordinator.task = Task { @MainActor in
+            do {
+                let endpoint = try await picker.endpoint
+                guard !Task.isCancelled else { return }
+                selected(endpoint)
+            } catch { if !Task.isCancelled { failed(error.localizedDescription) } }
+        }
+        return picker
+    }
+    func updateUIViewController(_ controller: UIViewController, context: Context) {}
+    static func dismantleUIViewController(_ controller: UIViewController, coordinator: Coordinator) { coordinator.task?.cancel() }
 }
 
 struct ReceivedCopiesView: View {

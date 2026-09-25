@@ -41,6 +41,9 @@
 		A01D842B7B46ED112BD00003 /* InviteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00004 /* InviteView.swift */; };
 		A01D842B7B46ED112BD00005 /* CaptureLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00006 /* CaptureLibrary.swift */; };
 		A01D842B7B46ED112BD00007 /* GalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00008 /* GalleryView.swift */; };
+		A02D842B7B46ED112BD00000 /* NearbyPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03D842B7B46ED112BD00000; };
+		A02D842B7B46ED112BD00001 /* NearbyPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03D842B7B46ED112BD00001; };
+		A02D842B7B46ED112BD00002 /* WiFiAwareRadio.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03D842B7B46ED112BD00002; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -80,6 +83,9 @@
 		A01D842B7B46ED112BD00004 /* InviteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteView.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD00006 /* CaptureLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureLibrary.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD00008 /* GalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryView.swift; sourceTree = "<group>"; };
+		A03D842B7B46ED112BD00000 /* NearbyPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyPermission.swift; sourceTree = "<group>"; };
+		A03D842B7B46ED112BD00001 /* NearbyPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyPairing.swift; sourceTree = "<group>"; };
+		A03D842B7B46ED112BD00002 /* WiFiAwareRadio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiAwareRadio.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -150,6 +156,9 @@
 				A01D842B7B46ED112BD00023 /* NearbyChannel.swift */,
 				A01D842B7B46ED112BD0001B /* OwnerMediaRecords.swift */,
 				A01D842B7B46ED112BD00012 /* PeerStore.swift */,
+				A03D842B7B46ED112BD00002 /* WiFiAwareRadio.swift */,
+				A03D842B7B46ED112BD00001 /* NearbyPairing.swift */,
+				A03D842B7B46ED112BD00000 /* NearbyPermission.swift */,
 				A01D842B7B46ED112BD0000E /* DeviceIdentity.swift */,
 				A01D842B7B46ED112BD00010 /* NearbySettingsView.swift */,
 				A01D842B7B46ED112BD0000A /* NearbyProbe.swift */,
@@ -249,6 +258,9 @@
 				A01D842B7B46ED112BD00022 /* NearbyChannel.swift in Sources */,
 				A01D842B7B46ED112BD0001A /* OwnerMediaRecords.swift in Sources */,
 				A01D842B7B46ED112BD00011 /* PeerStore.swift in Sources */,
+				A02D842B7B46ED112BD00002 /* WiFiAwareRadio.swift in Sources */,
+				A02D842B7B46ED112BD00001 /* NearbyPairing.swift in Sources */,
+				A02D842B7B46ED112BD00000 /* NearbyPermission.swift in Sources */,
 				A01D842B7B46ED112BD0000D /* DeviceIdentity.swift in Sources */,
 				A01D842B7B46ED112BD0000F /* NearbySettingsView.swift in Sources */,
 				A01D842B7B46ED112BD00009 /* NearbyProbe.swift in Sources */,
@@ -349,6 +361,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = UploadVideo/Configuration/Nearby.entitlements;
 				DEVELOPMENT_TEAM = GNQ3HY2357;
 				GENERATE_INFOPLIST_FILE = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -437,6 +450,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = UploadVideo/Configuration/Nearby.entitlements;
 				DEVELOPMENT_TEAM = T383T7Z432;
 				GENERATE_INFOPLIST_FILE = YES;
 				CURRENT_PROJECT_VERSION = 1;

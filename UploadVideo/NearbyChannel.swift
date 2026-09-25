@@ -26,7 +26,40 @@ final class NearbyChannel {
     private var deadline: Task<Void, Never>?
     private var closed = false
     private var started = false
+    var operationTimeout: Double = 20
     init(_ connection: NWConnection) { self.connection = connection }
+
+    // TLS proves possession here; the server credential authenticates the key
+    // before consent or media. Never use these parameters for ordinary uploads.
+    static func pairingParameters(identity: SecIdentity) throws -> NWParameters {
+        guard let local = sec_identity_create(identity) else { throw MediaRecords.failure("Invalid sharing identity") }
+        let tls = NWProtocolTLS.Options()
+        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, local)
+        sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv13)
+        sec_protocol_options_set_peer_authentication_required(tls.securityProtocolOptions, true)
+        sec_protocol_options_set_verify_block(tls.securityProtocolOptions, { _, trust, complete in
+            let chain = SecTrustCopyCertificateChain(sec_trust_copy_ref(trust).takeRetainedValue()) as? [SecCertificate]
+            let key = chain?.first.flatMap { SecCertificateCopyKey($0) }
+            complete(key.flatMap { SecKeyCopyExternalRepresentation($0, nil) as Data? }?.count == 65)
+        }, .main)
+        return NWParameters(tls: tls, tcp: NWProtocolTCP.Options())
+    }
+    var remotePublicKey: Data? {
+        guard let metadata = connection.metadata(definition: NWProtocolTLS.definition) as? NWProtocolTLS.Metadata else { return nil }
+        var result: Data?
+        sec_protocol_metadata_access_peer_certificate_chain(metadata.securityProtocolMetadata) { certificate in
+            if result == nil, let key = SecCertificateCopyKey(sec_certificate_copy_ref(certificate).takeRetainedValue()) {
+                result = SecKeyCopyExternalRepresentation(key, nil) as Data?
+            }
+        }
+        return result
+    }
+    func sendPairing(_ message: NearbyPairing.Message) async throws { try await send(kind: 1, data: JSONEncoder().encode(message)) }
+    func readPairing() async throws -> NearbyPairing.Message {
+        let (kind, data) = try await read()
+        guard kind == 1 else { throw MediaRecords.failure("Invalid pairing message") }
+        return try JSONDecoder().decode(NearbyPairing.Message.self, from: data)
+    }
 
     static func parameters(identity: SecIdentity, approval: PeerApproval, store: PeerStore) throws -> NWParameters {
         guard let local = sec_identity_create(identity), approval.sender == store.device || approval.recipient == store.device else {
@@ -95,7 +128,7 @@ final class NearbyChannel {
                 pending[id] = continuation
                 deadline?.cancel()
                 deadline = Task { [weak self] in
-                    do { try await Task.sleep(for: .seconds(20)) } catch { return }
+                    do { try await Task.sleep(for: .seconds(self?.operationTimeout ?? 20)) } catch { return }
                     self?.close(APIError(status: 0, message: "Nearby connection timed out"))
                 }
                 begin(id)

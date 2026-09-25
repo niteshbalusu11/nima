@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 # Build products stay in the ignored .build directory; sessions/caches are disposable Go fixtures.
 registered_build="$PWD/.build/registered-nearby"
 mkdir -p "$registered_build/Sources/Check"
-cp UploadVideo/API.swift UploadVideo/DeviceIdentity.swift UploadVideo/PeerStore.swift \
+cp UploadVideo/API.swift UploadVideo/DeviceIdentity.swift UploadVideo/NearbyPermission.swift UploadVideo/PeerStore.swift \
    UploadVideo/NearbyProbe.swift tools/PeerCheck.swift tools/RegisteredNearbyCheck.swift "$registered_build/Sources/Check/"
 python3 - "$registered_build/Package.swift" <<'PY'
 import json, pathlib, sys

@@ -1,4 +1,5 @@
 import SwiftUI
+@preconcurrency import Network
 import AVFoundation
 @preconcurrency import CoreLocation
 
@@ -125,6 +126,12 @@ final class AppModel: ObservableObject {
         let identity = try DeviceIdentity.loadOrCreate(for: current, at: api.baseURL)
         nearby = try NearbySharing(api: api, queue: queue, peers: peerStore(), identity: identity, budget: mediaBudget, slots: uploadSlots)
         if active { nearby?.activate() }
+    }
+    @available(iOS 26.0, *)
+    func joinNearby(_ endpoint: NWEndpoint) throws {
+        guard !recording, !stopping, !preparingCapture, let nearby else { throw APIError(status: 0, message: "Finish recording first") }
+        try nearby.join(endpoint)
+        location.stop(); camera?.suspend()
     }
     func receiveNearby(from approval: PeerApproval?) async throws {
         guard !recording, !stopping, !preparingCapture else { throw APIError(status: 0, message: "Finish recording first") }

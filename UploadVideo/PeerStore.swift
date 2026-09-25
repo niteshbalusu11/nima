@@ -80,6 +80,10 @@ actor PeerStore {
         var pendingRevocations: Set<String> = []
         var syncedAt: Date?
         var accessActive = true
+        var credentials: NearbyCredentials?
+        var pairings: [String: NearbyPermission]?
+        var pendingPairings: Set<String>?
+        var blockedPairings: Set<String>?
     }
     let device: RegisteredDevice
     let baseURL: URL
@@ -137,6 +141,10 @@ actor PeerStore {
     func revoke(_ id: String) throws {
         guard state.approvals.contains(where: { $0.id == id }) || state.pendingRevocations.contains(id) else { return }
         state.pendingRevocations.insert(id)
+        if state.pairings?[id] != nil {
+            state.blockedPairings = (state.blockedPairings ?? []).union([id])
+            state.pendingPairings = (state.pendingPairings ?? []).union([id])
+        }
         try save()
     }
 
@@ -145,6 +153,27 @@ actor PeerStore {
         syncing = true; defer { syncing = false }
         let authorization = authorizationVersion
         do {
+            let credentials: NearbyCredentials = try await api.request("GET", "devices/credential")
+            let claims = try credentials.certificate.verify(authority: credentials.authority)
+            guard claims.device == device else { throw Self.failure("Credential does not match this phone") }
+            guard authorization == authorizationVersion else { throw Self.failure("Sharing access changed") }
+            if let old = state.credentials, old.authority != credentials.authority { throw Self.failure("Nearby server identity changed; sign in again") }
+            state.credentials = credentials
+            for id in state.pendingPairings ?? [] {
+                guard let permission = state.pairings?[id] else { throw Self.failure("Missing saved permission") }
+                struct Sync: Encodable { let permission: NearbyPermission; let revoked: Bool }
+                let revoked = state.pendingRevocations.contains(id)
+                do {
+                    let _: OK = try await api.request("PUT", "peer-approvals/\(id)", body: API.encode(Sync(permission: permission, revoked: revoked)))
+                    guard authorization == authorizationVersion else { throw Self.failure("Sharing access changed") }
+                    if revoked == state.pendingRevocations.contains(id) { state.pendingPairings?.remove(id) }
+                } catch let error as APIError where error.status == 410 || error.status == 403 {
+                    state.pendingPairings?.remove(id)
+                    state.blockedPairings = (state.blockedPairings ?? []).union([id])
+                    state.approvals.removeAll { $0.id == id }
+                    state.pairings?[id] = nil
+                }
+            }
             let pending = state.pendingRevocations
             for id in pending {
                 do { let _: OK = try await api.request("DELETE", "peer-approvals/\(id)") }
@@ -158,13 +187,50 @@ actor PeerStore {
             // Keep removals made during the awaits, and clear only those reconciled
             // against a snapshot requested after their DELETE completed.
             state.pendingRevocations.subtract(pending)
-            state.approvals = response.approvals
+            for id in pending { state.pairings?[id] = nil; state.pendingPairings?.remove(id) }
+            let incoming = Set(response.approvals.map(\.id))
+            for id in state.pairings?.keys.map({ $0 }) ?? [] where !incoming.contains(id) && !(state.pendingPairings ?? []).contains(id) {
+                state.blockedPairings = (state.blockedPairings ?? []).union([id]); state.pairings?[id] = nil
+            }
+            let local = state.approvals.filter { (state.pendingPairings ?? []).contains($0.id) && !incoming.contains($0.id) && !state.pendingRevocations.contains($0.id) }
+            try Self.validate(response.approvals + local, for: device)
+            state.approvals = response.approvals + local
             state.syncedAt = Date(); state.accessActive = true
             try save()
         } catch {
             try invalidateIfUnauthorized(error)
             throw error
         }
+    }
+
+    func synchronizePairing(_ id: String) async throws {
+        if (state.pendingPairings ?? []).contains(id) {
+            try await refresh()
+            guard !(state.pendingPairings ?? []).contains(id) else { throw Self.failure("Waiting to sync sharing permission") }
+        }
+        guard snapshot().approvals.contains(where: { $0.id == id }) else { throw Self.failure("Sharing permission removed") }
+    }
+    func pairingCredentials() throws -> NearbyCredentials {
+        guard healthy, state.accessActive, let credentials = state.credentials else { throw Self.failure("Connect to the internet once to set up Nearby") }
+        guard try credentials.certificate.verify(authority: credentials.authority).device == device else { throw Self.failure("Invalid nearby credential") }
+        return credentials
+    }
+    func savePairing(_ permission: NearbyPermission) throws {
+        guard healthy, state.accessActive, permission.authority == state.credentials?.authority,
+              !(state.blockedPairings ?? []).contains(permission.approval.id),
+              !state.pendingRevocations.contains(permission.approval.id),
+              (state.blockedPairings?.count ?? 0) < 4096,
+              permission.approval.createdAt <= Int64(Date().timeIntervalSince1970) + 300 else { throw Self.failure("Sharing permission removed; pair again") }
+        try permission.verify()
+        let approval = permission.approval
+        // A fresh ID needs fresh consent. Never silently replace a different
+        // active permission for the same direction while cloud work is pending.
+        let next = state.approvals.filter { $0.id != approval.id } + [approval]
+        try Self.validate(next, for: device)
+        state.approvals = next
+        var pairs = state.pairings ?? [:]; pairs[approval.id] = permission; state.pairings = pairs
+        state.pendingPairings = (state.pendingPairings ?? []).union([approval.id])
+        try save()
     }
 
     func createInvitation(for code: String) async throws -> PeerInvitation {

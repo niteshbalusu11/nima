@@ -13,21 +13,23 @@ Foreground operation is supported. Keep the app open while receiving or uploadin
 
 ## Install and pair two phones
 
-For the current two-phone pilot, Debug builds are pinned to `https://689a-50-222-161-203.ngrok-free.app`, which reaches the Go server and RustFS on Nitesh's Mac. Pull this branch and build Debug with your own development signing; no `Local.xcconfig` is needed. The pin takes precedence over an existing local override. Use a separate enrollment invite for each phone, then continue at step 4 below. The Mac and tunnel must stay running. If the tunnel URL changes, update the Debug pin and rebuild both apps. Release still uses the deployed API.
+Debug builds on this branch are pinned to `https://26bd-50-222-161-203.ngrok-free.app`, reaching the Go API and RustFS on Nitesh's Mac. Pull the latest branch and build **Debug** with your own valid development signing. No `Local.xcconfig` is needed; the pin takes precedence over local overrides. Release still uses the deployed API, which has not been updated by this work. The Mac, RustFS, gateway and ngrok must stay running.
 
-Steps 1–3 describe setting up a different local server; remove the temporary Debug endpoint pin before using a local override.
+Nearby requires **iOS 26 or later and Wi-Fi Aware-capable hardware** (checked at runtime). Camera and cloud upload keep their iOS 17 minimum. Enable the Wi-Fi Aware Publish and Subscribe capability in your signing profile; the checked-in entitlements and service declaration are included in both build configurations. The app's identity remains Nima / `com.prodata.uploadvideo` for the installed pilot build.
 
-1. Run this branch's Go server against RustFS for the first pilot. Set `NEARBY_RELAY_ENABLED=true` in its environment; the default is **false**. This flag admits delegated cloud requests, not enrollment or ordinary owner uploads. The server applies additive migrations through version 7 at startup.
-2. For a local Mac server, edit the private `server/.env`: use `LISTEN_ADDR=0.0.0.0:8080`, `STORAGE_BIND_IP=0.0.0.0`, and `S3_PUBLIC_ENDPOINT=http://YOUR_MAC_LAN_IP:9000`, keeping `S3_ENDPOINT=http://127.0.0.1:9000`. Start with `./tools/start-local.sh`. Both phones must be able to reach the API and the signed storage URL when testing cloud upload.
-3. For Debug builds, put `API_BASE_URL = http:/$()/YOUR_MAC_LAN_IP:8080` in the ignored `UploadVideo/Configuration/Local.xcconfig`. Open `UploadVideo.xcodeproj`, choose the `UploadVideo` scheme, and run on each iPhone using valid development signing. Xcode installation requires Developer Mode. Both builds must use exactly the same API URL.
-4. Enroll each phone with its own app invite from that server. In **Nearby → People**, set up each phone. B uses **Share my contact**; A pastes that contact and creates an invitation. B pastes A's invitation and explicitly allows saving and uploading A's media. Do this while online, before disconnecting the phones.
-5. A selects B under **Share new captures**. B selects **Receive from A**. Allow Local Network access. Existing media from before selection is not broadcast; enabling sharing during recording includes that recording. A's selection persists across relaunches until turned off. Library imports keep their normal cloud-upload behavior and are not automatically broadcast nearby.
+1. Enroll each phone with its own invite from the test server. Open **Nearby** once while online; Nima registers the phone and caches a server-signed credential valid for 30 days. Existing users also need this initial credential download after updating. Give the account a name in Profile so the consent sheet identifies it clearly.
+2. The recorder taps **Share nearby**. The recipient taps **Join nearby**, selects the recorder in Apple's native picker, and follows the system PIN pairing. Close the recorder's system pairing sheet with **Done** when pairing completes. The app maintains the selected connection and handles its account/permission exchange automatically.
+3. On first connection, the recipient taps **Save and back up**. This explicitly allows storing the recorder's media and uploading it to the recorder's account. Previously approved connections do not repeat this consent. Pairing does not exchange either user's login token.
+4. The recorder returns to the camera and records. The recipient keeps Nearby open and watches saved copies under **Received**, including live playback. The recorder can use **Add nearby person** for up to three simultaneous recipients and stop each recipient independently.
+5. Use **People → Remove** to revoke a sharing permission. Device pairing and app permissions are distinct: merely remaining paired in iOS does not restore a removed app permission. A removed peer may require refreshing the server state and starting a fresh consent flow.
 
-For TestFlight, follow [the existing distribution instructions](testflight.md) with a new build number and an HTTPS test backend containing this PR. Release ignores `Local.xcconfig`; set its API endpoint deliberately. TestFlight enrollment and this app's invite are separate. Uploading an archive or merging/deploying this PR was not performed as part of implementation.
+After initial credential download, first pairing and consent can happen without internet. Permissions signed by both devices are saved locally and synchronized by either phone when online. The server validates active accounts/devices and both signatures before allowing delegated uploads. A recipient can therefore restore cloud media while the recorder remains offline.
+
+For a different backend, update the temporary Debug pin and its publicly reachable signed-storage endpoint. First enrollment still needs internet. If ngrok assigns a new URL, rebuild both phones; sessions/identities are scoped to the API URL and new sign-in is required. Use replacement invites for existing accounts to retain cloud ownership.
 
 ## First two-phone test
 
-1. With pairing complete, disable cellular and disconnect both phones from access points; leave Wi-Fi enabled. Keep both apps in the foreground. Confirm that B connects without a router or internet.
+1. After both phones have downloaded their initial credentials, test first pairing while offline. Disable cellular and disconnect both phones from access points; leave Wi-Fi enabled. Keep both apps in the foreground. Use Share/Join and confirm that first pairing, consent and transfer complete without a router or internet.
 2. A records for 60 seconds and takes a photo during the recording. B should show growing saved counts and the photo in **Received**. Open the video there and verify video/audio playback **before A stops**.
 3. Stop normally. B should have every part and a known ending. Move B out of range and back during another recording; saved counts must catch up after reconnecting. Repeat with C, then D, if available. A slow recipient must not stall another recipient or the camera.
 4. Leave A offline or close its app. Give B a route to the configured API/storage server. B should upload into A's capture; check A's cloud dashboard from another client. Repeat with A and B online simultaneously, and with multiple recipients online.
@@ -39,14 +41,18 @@ Record device/iOS versions, access-point/cellular configuration, discovery time,
 
 ## Automated evidence
 
-On September 24, 2026:
+The Wi-Fi Aware migration adds automated checks for server-issued credentials, wrong authority, expiry/future dates, signature tampering, credential substitution across TLS connections, fresh challenge proofs, declined consent, first pairing without an HTTP approval request, reconnect without repeated consent, durable permission storage, deferred two-party authorization, concurrent synchronization and revoked-permission replay. The original native media test continues to cover live recording, three recipients and cloud recovery on RustFS. These native tests use loopback TLS, not Wi-Fi Aware radio.
+
+Validation rerun for the Wi-Fi Aware migration on September 25, 2026:
 
 - `./tools/verify-nearby-media.sh`: four registered identities; actual mutual TLS over loopback; real H.264/AAC and JPEG arriving during capture; three independent recipients; disconnect/reconnect; receiver-local HLS playback before Stop; owner upload in parallel; recipient store reopen; native B/C/D uploads into A's capture on real RustFS; complementary partial copies; interrupted ending; gap-safe playback; revoked grant preserving local copies; local-only deletion; combined/cross-account storage accounting and upload-slot cancellation.
 - `./tools/verify-signed-media.sh`: Swift/Go signed-record compatibility, tampering, durable receipts, sparse coverage and interrupted receive/restart cases.
+- `./tools/verify-peers.sh`: durable approvals, offline restart, refresh/revocation races, consent and cache isolation. The Go race suite also covers concurrent signed-permission synchronization and revoke-before-first-sync.
 - `./tools/verify-local.sh`: full Go race suite, RustFS conditional/checksum writes and original live encoder/uploader/gallery regressions.
-- Debug iOS Simulator and unsigned Release iOS builds compile.
+- Signed Debug iPhone and unsigned Release iOS builds compile with the Wi-Fi Aware entitlement. The new frameworks are weak-linked, preserving startup support below iOS 26. Debug Simulator compilation is also checked; Simulator cannot validate Wi-Fi Aware radio.
+- The ngrok-facing RustFS checksum and conditional-create race probe passes, including the public signed-storage route.
 
-These are native/localhost tests, not evidence of iPhone-to-iPhone radio performance. The app supports iOS 17 and later; that OS/device matrix has not been exercised here.
+These are native/localhost tests, not evidence of iPhone-to-iPhone radio performance. Camera/cloud upload support iOS 17 and later; Nearby is gated to supported iOS 26+ devices. The physical OS/device matrix has not been exercised here.
 
 ## Storage and transport boundaries
 
@@ -54,7 +60,7 @@ Received media is capped at 1 GiB within a combined 3 GiB durable-media budget a
 
 Saved receipts are independent of cloud acknowledgements. Receipt inventories are reconstructed on reconnect; terminal evidence can arrive before missing media. Playback serves only the contiguous verified prefix through a random-path listener bound to `127.0.0.1`. Playback failures do not stop saving or cloud upload. If a later unusually long fragment exceeds the player's fixed HLS target duration, **Retry playback** opens a new playlist session. Exporting an incomplete video saves only its available contiguous prefix and is labeled accordingly.
 
-Release's HTTP exception is limited to `127.0.0.1` for that on-device player. API/storage requests continue requiring HTTPS, and nearby connections require TLS 1.3. Apple supports [IP-specific ATS exceptions from iOS 17](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsexceptiondomains).
+Release's HTTP exception is limited to `127.0.0.1` for that on-device player. API/storage requests continue requiring HTTPS, and nearby connections require TLS 1.3 over Wi-Fi Aware. A server-signed credential must match the TLS peer key before any app identity or permission is accepted. Apple supports [IP-specific ATS exceptions from iOS 17](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsexceptiondomains).
 
 ## Before enabling Tigris relay uploads
 

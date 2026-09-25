@@ -1,5 +1,7 @@
 # Nearby feasibility probes
 
+> Historical Bonjour/code-exchange implementation. Current pairing uses Wi-Fi Aware; see [the pilot instructions](nearby-pilot.md) and [migration plan](wifi-aware-plan.md).
+
 This is the first implementation slice of [the nearby sharing plan](nearby-sharing-plan.md), on `codex/nearby-feasibility`. It provides repeatable transport and storage checks before connecting nearby delivery to camera media. Milestone 0 is still open: physical offline networking and production Tigris behavior have not been validated.
 
 ## Implemented

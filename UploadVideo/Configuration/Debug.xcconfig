@@ -1,4 +1,4 @@
 #include? "Local.xcconfig"
 // Temporary shared endpoint for the two-phone Nearby pilot.
-API_BASE_URL = https:/$()/689a-50-222-161-203.ngrok-free.app
+API_BASE_URL = https:/$()/26bd-50-222-161-203.ngrok-free.app
 INFOPLIST_FILE = UploadVideo/Configuration/Debug-Info.plist

@@ -1,3 +1,4 @@
+#if !os(iOS)
 import Foundation
 import Security
 @preconcurrency import Network
@@ -143,3 +144,5 @@ final class NearbyReceiver {
         return pending
     }
 }
+
+#endif

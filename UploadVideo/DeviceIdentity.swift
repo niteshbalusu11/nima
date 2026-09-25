@@ -137,6 +137,10 @@ struct DeviceIdentity: Sendable {
         device.isValid && device.signingPublicKey == Self.encodeURL(signing.publicKey.x963Representation)
             && device.tlsPublicKey == Self.encodeURL(tls.publicKey.x963Representation)
     }
+    func signNearby(_ payload: Data) throws -> Data {
+        guard payload.count <= 512, payload.starts(with: Data("uploadvideo.nearby-".utf8)) else { throw Self.identityError("Invalid nearby signing domain") }
+        return try signing.signature(for: payload).derRepresentation
+    }
     func signMedia(_ payload: Data) throws -> Data {
         guard payload.count <= 512, payload.starts(with: Data("uploadvideo.media.".utf8)) else {
             throw Self.identityError("Invalid media signing domain")
@@ -175,8 +179,8 @@ struct DeviceIdentity: Sendable {
         data.base64EncodedString().replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
-    static func decodeURL(_ value: String) -> Data? {
-        guard value.utf8.count <= 128 else { return nil }
+    static func decodeURL(_ value: String, maximumEncodedBytes: Int = 128) -> Data? {
+        guard value.utf8.count <= maximumEncodedBytes else { return nil }
         let text = value.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         guard let data = Data(base64Encoded: text + String(repeating: "=", count: (4 - text.count % 4) % 4)),
               encodeURL(data) == value else { return nil }

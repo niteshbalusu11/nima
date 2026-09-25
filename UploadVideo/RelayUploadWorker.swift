@@ -17,6 +17,7 @@ struct RelayUploadWorker: Sendable {
             guard let material = try await store.relayMaterial(captureHash: captureHash) else {
                 throw APIError(status: 403, message: "Sharing permission unavailable", code: "local_permission")
             }
+            try await store.peers.synchronizePairing(material.permission.approvalId)
             struct Redemption: Encodable { let approvalId: String; let descriptor: MediaRecords.Envelope; let grant: MediaRecords.Envelope }
             struct Redeemed: Decodable, Sendable { let id: String }
             let redeemed: Redeemed = try await api.request("POST", "relay-grants/redeem", body: API.encode(Redemption(

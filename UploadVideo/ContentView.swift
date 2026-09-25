@@ -369,12 +369,6 @@ private struct ProfileView: View {
                 Section {
                     NavigationLink("Nearby people") { NearbySettingsView(model: model) }
                 }
-                #if DEBUG
-                Section("Development") {
-                    NavigationLink("Nearby transport probe") { NearbyProbeView(model: model) }
-                        .disabled(model.recording || model.stopping || model.preparingCapture || model.managingCapture)
-                }
-                #endif
                 Section {
                     Button("Log Out", role: .destructive) { confirmingLogout = true }
                         .liquidGlassButton()

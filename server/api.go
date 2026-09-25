@@ -127,6 +127,8 @@ func (a *api) handler() http.Handler {
 	protected.HandleFunc("POST /devices/challenge", a.deviceChallenge)
 	protected.HandleFunc("POST /devices/register", a.registerDevice)
 	protected.HandleFunc("GET /devices/current", a.currentDevice)
+	protected.HandleFunc("GET /devices/credential", a.nearbyCredential)
+	protected.HandleFunc("PUT /peer-approvals/{id}", a.syncNearbyPermission)
 	protected.HandleFunc("DELETE /devices/{id}", a.revokeDevice)
 	protected.HandleFunc("POST /peer-invitations", a.createPeerInvitation)
 	protected.HandleFunc("POST /peer-invitations/preview", a.previewPeerInvitation)

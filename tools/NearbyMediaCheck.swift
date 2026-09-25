@@ -15,6 +15,62 @@ struct NearbyMediaCheck {
         }
         throw MediaRecords.failure("Timed out: " + reason)
     }
+    @MainActor private final class PairState {
+        var port: UInt16 = 0
+        var sent: PeerApproval?
+        var failure: Error?
+        var senderTask: Task<Void, Never>?
+    }
+    static func pair(_ sender: PeerStore, _ recipient: PeerStore, _ a: DeviceIdentity, _ b: DeviceIdentity, expectConsent: Bool, allow: Bool = true) async throws {
+        let parameters = try NearbyChannel.pairingParameters(identity: a.tlsIdentity())
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        let listener = try NWListener(using: parameters)
+        let state = PairState()
+        listener.stateUpdateHandler = { listenerState in
+            Task { @MainActor in if case .ready = listenerState { state.port = listener.port?.rawValue ?? 0 } }
+        }
+        listener.newConnectionHandler = { connection in
+            Task { @MainActor in
+                state.senderTask = Task {
+                    let channel = NearbyChannel(connection)
+                    defer { channel.close() }
+                    do { try await channel.start(); state.sent = try await NearbyPairing.send(channel: channel, store: sender, identity: a) }
+                    catch { state.failure = error }
+                }
+            }
+        }
+        listener.start(queue: .main)
+        defer { listener.cancel(); state.senderTask?.cancel() }
+        try await until("pairing listener") { state.port > 0 }
+        let connection = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: state.port)!, using: try NearbyChannel.pairingParameters(identity: b.tlsIdentity()))
+        let channel = NearbyChannel(connection); defer { channel.close() }
+        try await channel.start()
+        var consentCount = 0
+        let received = try await NearbyPairing.receive(channel: channel, store: recipient, identity: b) { _ in consentCount += 1; return allow }
+        try await until("both phones saved permission") { if let failure = state.failure { throw failure }; return state.sent != nil }
+        try expect(state.sent == received, "Directional permission differs")
+        try expect(consentCount == (expectConsent ? 1 : 0), "Consent was repeated or skipped")
+    }
+    static func credentialChecks(_ credentials: NearbyCredentials, identity: DeviceIdentity, recipient: RegisteredDevice) throws {
+        func reject(_ action: () throws -> Void) throws {
+            do { try action() } catch { return }
+            throw MediaRecords.failure("Invalid nearby credential or proof accepted")
+        }
+        _ = try credentials.certificate.verify(authority: credentials.authority)
+        let other = Curve25519.Signing.PrivateKey()
+        try reject { _ = try credentials.certificate.verify(authority: DeviceIdentity.encodeURL(other.publicKey.rawRepresentation)) }
+        let claims = try credentials.certificate.verify(authority: credentials.authority)
+        try reject { _ = try credentials.certificate.verify(authority: credentials.authority, now: claims.expiresAt) }
+        try reject { _ = try credentials.certificate.verify(authority: credentials.authority, now: claims.issuedAt - 301) }
+        let altered = NearbyCertificate(payload: credentials.certificate.payload, signature: DeviceIdentity.encodeURL(Data(repeating: 0, count: 64)))
+        try reject { _ = try altered.verify(authority: credentials.authority) }
+        let a = DeviceIdentity.encodeURL(Data(repeating: 1, count: 32)), b = DeviceIdentity.encodeURL(Data(repeating: 2, count: 32))
+        let proof = try NearbyPairing.proof(sender: claims.device, recipient: recipient, senderNonce: a, recipientNonce: b, authority: credentials.authority)
+        let signature = DeviceIdentity.encodeURL(try identity.signNearby(proof))
+        let replay = try NearbyPairing.proof(sender: claims.device, recipient: recipient, senderNonce: b, recipientNonce: a, authority: credentials.authority)
+        try reject { try NearbyPermission.verify(signature, key: claims.device.signingPublicKey, data: replay) }
+        print("PASS: wrong authority, expired/future credentials, signature tampering and TLS identity substitution rejected")
+    }
     static func main() async throws {
         var config = try API.decoder.decode(Config.self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1])))
         try storageChecks(root: config.root.appendingPathComponent("budget"))
@@ -29,12 +85,34 @@ struct NearbyMediaCheck {
             let root = config.root.appendingPathComponent("phone-\(index)"), budget = try MediaStorageBudget(root: root)
             identities.append(identity); peers.append(peer); budgets.append(budget)
             stores.append(try ReceivedMediaStore(peers: peer, root: root.appendingPathComponent("ReceivedMedia"), budget: budget))
-            if index > 0 {
-                let invite = try await peers[0].createInvitation(for: PeerCode.contact(server: config.baseUrl, device: device))
-                try await peer.acceptInvitation(PeerCode.invitation(server: config.baseUrl, token: invite.token))
-            }
+            try await peer.refresh()
         }
+        do {
+            try await pair(peers[0], peers[1], identities[2], identities[1], expectConsent: true)
+            throw MediaRecords.failure("Credential forwarded by a different TLS phone was accepted")
+        } catch let error as APIError {
+            try expect(error.message == "Nearby credential does not match the connected phone", "TLS credential rejection failed for another reason")
+        }
+        try credentialChecks(try await peers[0].pairingCredentials(), identity: identities[0], recipient: peers[1].device)
+        do {
+            try await pair(peers[0], peers[1], identities[0], identities[1], expectConsent: true, allow: false)
+            throw MediaRecords.failure("Declined sharing was accepted")
+        } catch is CancellationError { }
+        try expect(await peers[0].snapshot().approvals.isEmpty, "Sender saved declined consent")
+        try expect(await peers[1].snapshot().approvals.isEmpty, "Recipient saved declined consent")
+        for index in 1...3 { try await pair(peers[0], peers[index], identities[0], identities[index], expectConsent: true) }
+        // No HTTP approval call was needed for the native handshake. The server
+        // must still have zero approvals until a participant reconnects to sync.
+        struct Approvals: Decodable, Sendable { let approvals: [PeerApproval] }
+        let unsynced: Approvals = try await API(baseURL: config.baseUrl, token: config.sessions[0].token).request("GET", "peer-approvals")
+        try expect(unsynced.approvals.isEmpty, "Offline handshake secretly required server approval")
+        try await pair(peers[0], peers[1], identities[0], identities[1], expectConsent: false)
+        let reopenedPeers = try PeerStore(api: API(baseURL: config.baseUrl, token: config.sessions[1].token), session: config.sessions[1], device: peers[1].device, root: config.root.appendingPathComponent("peers"))
+        try expect(await reopenedPeers.snapshot().approvals.count == 1, "Offline permission was not durable")
+        try await reopenedPeers.refresh()
+        print("PASS: certified mutual TLS pairing without online approval, fresh consent once, reconnect, durable permission and deferred server sync")
         try await peers[0].refresh()
+        for peer in peers.dropFirst() { try await peer.refresh() }
         let approvals = await peers[0].snapshot().approvals
         func approval(_ index: Int) -> PeerApproval { approvals.first { $0.recipient == peers[index].device }! }
         let apiA = API(baseURL: config.baseUrl, token: config.sessions[0].token)
