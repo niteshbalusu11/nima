@@ -70,11 +70,6 @@ CREATE TABLE peer_approvals (
  revoked_at INTEGER, CHECK(sender_device_id != recipient_device_id));
 CREATE UNIQUE INDEX peer_approvals_active ON peer_approvals(sender_device_id,recipient_device_id) WHERE revoked_at IS NULL;
 CREATE INDEX peer_approvals_recipient ON peer_approvals(recipient_device_id);
-CREATE TABLE peer_invitations (
- hash TEXT PRIMARY KEY, sender_device_id TEXT NOT NULL REFERENCES devices(id),
- recipient_device_id TEXT NOT NULL REFERENCES devices(id), expires_at INTEGER NOT NULL,
- approval_id TEXT REFERENCES peer_approvals(id), CHECK(sender_device_id != recipient_device_id));
-CREATE INDEX peer_invitations_pair ON peer_invitations(sender_device_id,recipient_device_id);
 `,
 	`
 ALTER TABLE captures ADD COLUMN owner_metadata_pending INTEGER NOT NULL DEFAULT 0 CHECK(owner_metadata_pending IN (0,1));

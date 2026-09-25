@@ -26,6 +26,10 @@ func TestMigrationsFreshAndRepeatStartup(t *testing.T) {
 	if databaseVersion(t, db) != len(migrations) {
 		t.Fatal("fresh schema not versioned")
 	}
+	var obsolete int
+	if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('peer_invitations','peer_invitations_pair')").Scan(&obsolete); err != nil || obsolete != 0 {
+		t.Fatalf("fresh schema includes removed peer-invitation storage: %d %v", obsolete, err)
+	}
 	if _, err = db.Exec("INSERT INTO accounts(id,created_at,role) VALUES('kept',0,'admin')"); err != nil {
 		t.Fatal(err)
 	}

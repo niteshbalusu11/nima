@@ -8,7 +8,7 @@ Nima uses registered device keys, server-signed credentials, and a permission si
 
 The optional `Session.deviceId` preserves decoding of existing sessions. Registration binds only the caller's token; other tokens for that account stay unchanged. A new session for the same account can prove the same keys and recover the same device ID. Keys cannot be claimed by another account, moved between roles, or replaced on a bound session. Revoked keys cannot be registered again.
 
-Registration and sharing schema migrations preserve existing accounts, sessions, captures, and objects. Historical migrations remain unchanged for database compatibility. The old peer-invitation table is no longer used by runtime code; account-enrollment invitations are separate and remain supported.
+Registration and sharing schema migrations preserve existing accounts, sessions, captures, and objects. The unmerged Nearby migration no longer creates the obsolete peer-invitation table. Account-enrollment invitations are separate and remain supported.
 
 Open **Nearby** once while online to register the device and cache its credential. Setup errors do not stop normal camera or owner uploads. A server commit whose response was lost is recovered on retry.
 
