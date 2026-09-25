@@ -251,12 +251,11 @@ func (a *api) listFaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	var owner string
 	var active, optedIn bool
-	err = tx.QueryRowContext(r.Context(), `SELECT c.account_id,a.active,
-		EXISTS(SELECT 1 FROM face_research_captures rc WHERE rc.capture_id=c.id)
+	err = tx.QueryRowContext(r.Context(), `SELECT a.active,
+		EXISTS(SELECT 1 FROM face_research_captures rc WHERE rc.capture_id=c.id AND rc.cross_account_confirmed_at IS NOT NULL)
 		FROM captures c JOIN accounts a ON a.id=c.account_id
-		WHERE c.id=? AND c.deleted_at IS NULL`, r.PathValue("id")).Scan(&owner, &active, &optedIn)
+		WHERE c.id=? AND c.deleted_at IS NULL`, r.PathValue("id")).Scan(&active, &optedIn)
 	if errors.Is(err, sql.ErrNoRows) {
 		failure(w, 404, "Not found")
 		return
@@ -269,11 +268,12 @@ func (a *api) listFaces(w http.ResponseWriter, r *http.Request) {
 	if optedIn {
 		status.Status = "enabled"
 	}
-	status.OptInAllowed = owner == researchAccountID() && owner != "" && active
+	status.OptInAllowed = active && calibratedFaceResearch()
 	status.EnrollmentAllowed = optedIn && status.OptInAllowed
-	status.MatchingEnabled = status.EnrollmentAllowed && calibratedFaceResearch()
+	status.MatchingEnabled = status.EnrollmentAllowed
 	rows, err := tx.QueryContext(r.Context(), `SELECT g.id,g.first_seen_ms,g.sightings,g.embedding,
-		COALESCE(g.model_version,''),COALESCE(p.display_name,'')
+		COALESCE(g.model_version,''),COALESCE(p.display_name,''),p.id IS NOT NULL,
+		p.cross_account_confirmed_at IS NOT NULL
 		FROM face_groups g LEFT JOIN face_people p ON p.reference_group_id=g.id
 		WHERE g.capture_id=? ORDER BY g.first_seen_ms,g.id`, r.PathValue("id"))
 	if err != nil {
@@ -289,15 +289,21 @@ func (a *api) listFaces(w http.ResponseWriter, r *http.Request) {
 		Enrollable    bool               `json:"enrollable"`
 		feature       []float64
 		version       string
+		enrolled      bool
 	}
 	faces := []face{}
 	for rows.Next() {
 		var f face
 		var encoded string
-		if err := rows.Scan(&f.ID, &f.FirstSeenMS, &f.Sightings, &encoded, &f.version, &f.ReferenceName); err != nil {
+		var enrollmentConfirmed bool
+		if err := rows.Scan(&f.ID, &f.FirstSeenMS, &f.Sightings, &encoded, &f.version,
+			&f.ReferenceName, &f.enrolled, &enrollmentConfirmed); err != nil {
 			rows.Close()
 			failure(w, 503, "Unavailable")
 			return
+		}
+		if !enrollmentConfirmed {
+			f.ReferenceName = ""
 		}
 		_ = json.Unmarshal([]byte(encoded), &f.feature)
 		faces = append(faces, f)
@@ -315,14 +321,14 @@ func (a *api) listFaces(w http.ResponseWriter, r *http.Request) {
 	} else {
 		var candidates []researchCandidate
 		if status.MatchingEnabled {
-			candidates, err = loadResearchCandidates(r.Context(), tx, owner)
+			candidates, err = loadResearchCandidates(r.Context(), tx)
 			if err != nil {
 				failure(w, 503, "Unavailable")
 				return
 			}
 		}
 		for i := range faces {
-			faces[i].Enrollable = faces[i].ReferenceName == "" && faces[i].version == faceModelVersion && validFaceVector(faces[i].feature)
+			faces[i].Enrollable = !faces[i].enrolled && faces[i].version == faceModelVersion && validFaceVector(faces[i].feature)
 			result := recognitionResult{State: "unavailable"}
 			if status.MatchingEnabled && faces[i].ReferenceName == "" {
 				threshold, margin, _ := faceResearchThresholds()

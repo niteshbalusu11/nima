@@ -14,23 +14,24 @@ import (
 
 const maxFacePeople = 20
 
-// Named results remain off until consented recordings establish and validate
-// version-specific acceptance and ambiguity values. The pure selector below is
-// tested independently; integration must not invent a release threshold.
+// Named results remain off unless a consented study is explicitly enabled.
+// The pure selector below is tested independently.
 var faceResearchCalibration = struct {
 	threshold, margin float64
 	calibrated        bool
 }{}
 
-// These values are for the consented local study only. They were frozen from
-// the first uploaded video and must not enable matching on a deployed server.
-// A separate recording is evaluated before the trial switch is used.
-const localFaceThreshold = 0.30
-const localFaceMargin = 0.05
+// These values are for the consented research pilot only. They were frozen
+// from the first uploaded video and checked against a separate recording.
+const pilotFaceThreshold = 0.30
+const pilotFaceMargin = 0.05
 
 func faceResearchThresholds() (threshold, margin float64, calibrated bool) {
 	if os.Getenv("APP_ENV") == "development" && os.Getenv("FACE_RESEARCH_LOCAL_TRIAL") == "1" {
-		return localFaceThreshold, localFaceMargin, true
+		return pilotFaceThreshold, pilotFaceMargin, true
+	}
+	if os.Getenv("APP_ENV") == "production" && os.Getenv("FACE_RESEARCH_PRODUCTION_PILOT") == "1" {
+		return pilotFaceThreshold, pilotFaceMargin, true
 	}
 	return faceResearchCalibration.threshold, faceResearchCalibration.margin, faceResearchCalibration.calibrated
 }
@@ -103,8 +104,6 @@ func selectFaceCandidate(vector []float64, captureID, version string, candidates
 	return recognitionResult{State: "possible_match", PersonID: winner.PersonID, DisplayName: winner.DisplayName}
 }
 
-func researchAccountID() string { return os.Getenv("FACE_RESEARCH_ACCOUNT_ID") }
-
 func (a *api) optInFaceResearch(w http.ResponseWriter, r *http.Request) {
 	if !a.requireSuperAdmin(w, r) {
 		return
@@ -119,8 +118,7 @@ func (a *api) optInFaceResearch(w http.ResponseWriter, r *http.Request) {
 		failure(w, 400, "Participant consent must be confirmed")
 		return
 	}
-	owner := researchAccountID()
-	if owner == "" {
+	if !calibratedFaceResearch() {
 		failure(w, 409, "Face research is disabled")
 		return
 	}
@@ -130,11 +128,10 @@ func (a *api) optInFaceResearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	var captureOwner string
 	var active bool
-	err = tx.QueryRowContext(r.Context(), `SELECT c.account_id,a.active FROM captures c JOIN accounts a ON a.id=c.account_id
-		WHERE c.id=? AND c.deleted_at IS NULL`, r.PathValue("id")).Scan(&captureOwner, &active)
-	if err == sql.ErrNoRows || (err == nil && captureOwner != owner) {
+	err = tx.QueryRowContext(r.Context(), `SELECT a.active FROM captures c JOIN accounts a ON a.id=c.account_id
+		WHERE c.id=? AND c.deleted_at IS NULL`, r.PathValue("id")).Scan(&active)
+	if err == sql.ErrNoRows {
 		failure(w, 404, "Not found")
 		return
 	}
@@ -143,11 +140,16 @@ func (a *api) optInFaceResearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !active {
-		failure(w, 409, "Research account is inactive")
+		failure(w, 409, "Capture owner is inactive")
 		return
 	}
-	_, err = tx.ExecContext(r.Context(), `INSERT INTO face_research_captures(capture_id,confirmed_by,confirmed_at)
-		VALUES(?,?,?) ON CONFLICT(capture_id) DO NOTHING`, r.PathValue("id"), account(r), time.Now().Unix())
+	confirmedAt := time.Now().Unix()
+	_, err = tx.ExecContext(r.Context(), `INSERT INTO face_research_captures(capture_id,confirmed_by,confirmed_at,cross_account_confirmed_at)
+		VALUES(?,?,?,?) ON CONFLICT(capture_id) DO UPDATE SET
+		confirmed_by=excluded.confirmed_by,confirmed_at=excluded.confirmed_at,
+		cross_account_confirmed_at=excluded.cross_account_confirmed_at
+		WHERE face_research_captures.cross_account_confirmed_at IS NULL`,
+		r.PathValue("id"), account(r), confirmedAt, confirmedAt)
 	if err != nil || tx.Commit() != nil {
 		failure(w, 503, "Unavailable")
 		return
@@ -165,11 +167,10 @@ func (a *api) optOutFaceResearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	var owner string
 	var optedIn bool
-	err = tx.QueryRowContext(r.Context(), `SELECT c.account_id,EXISTS(SELECT 1 FROM face_research_captures rc WHERE rc.capture_id=c.id)
-		FROM captures c WHERE c.id=? AND c.deleted_at IS NULL`, r.PathValue("id")).Scan(&owner, &optedIn)
-	if err == sql.ErrNoRows || (err == nil && !optedIn && owner != researchAccountID()) {
+	err = tx.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM face_research_captures rc WHERE rc.capture_id=c.id)
+		FROM captures c WHERE c.id=? AND c.deleted_at IS NULL`, r.PathValue("id")).Scan(&optedIn)
+	if err == sql.ErrNoRows || (err == nil && !optedIn) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(204)
 		return
@@ -210,8 +211,7 @@ func (a *api) enrollFacePerson(w http.ResponseWriter, r *http.Request) {
 		failure(w, 400, "Valid name and enrollment consent required")
 		return
 	}
-	owner := researchAccountID()
-	if owner == "" {
+	if !calibratedFaceResearch() {
 		failure(w, 409, "Face research is disabled")
 		return
 	}
@@ -224,11 +224,11 @@ func (a *api) enrollFacePerson(w http.ResponseWriter, r *http.Request) {
 	var captureOwner, version, encoded string
 	var active, optedIn bool
 	err = tx.QueryRowContext(r.Context(), `SELECT c.account_id,a.active,
-		EXISTS(SELECT 1 FROM face_research_captures rc WHERE rc.capture_id=c.id),COALESCE(g.model_version,''),g.embedding
+		EXISTS(SELECT 1 FROM face_research_captures rc WHERE rc.capture_id=c.id AND rc.cross_account_confirmed_at IS NOT NULL),COALESCE(g.model_version,''),g.embedding
 		FROM face_groups g JOIN captures c ON c.id=g.capture_id JOIN accounts a ON a.id=c.account_id
 		WHERE g.id=? AND c.id=? AND c.deleted_at IS NULL`, input.FaceGroupID, input.CaptureID).
 		Scan(&captureOwner, &active, &optedIn, &version, &encoded)
-	if err == sql.ErrNoRows || (err == nil && captureOwner != owner) {
+	if err == sql.ErrNoRows {
 		failure(w, 404, "Not found")
 		return
 	}
@@ -251,7 +251,7 @@ func (a *api) enrollFacePerson(w http.ResponseWriter, r *http.Request) {
 		failure(w, 409, "Face is already enrolled")
 		return
 	}
-	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM face_people WHERE account_id=?", owner).Scan(&count); err != nil {
+	if err = tx.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM face_people").Scan(&count); err != nil {
 		failure(w, 503, "Unavailable")
 		return
 	}
@@ -260,9 +260,10 @@ func (a *api) enrollFacePerson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := newID()
+	confirmedAt := time.Now().Unix()
 	_, err = tx.ExecContext(r.Context(), `INSERT INTO face_people
-		(id,account_id,reference_group_id,display_name,consent_confirmed_by,consent_confirmed_at)
-		VALUES(?,?,?,?,?,?)`, id, owner, input.FaceGroupID, input.DisplayName, account(r), time.Now().Unix())
+		(id,account_id,reference_group_id,display_name,consent_confirmed_by,consent_confirmed_at,cross_account_confirmed_at)
+		VALUES(?,?,?,?,?,?,?)`, id, captureOwner, input.FaceGroupID, input.DisplayName, account(r), confirmedAt, confirmedAt)
 	if err != nil || tx.Commit() != nil {
 		failure(w, 503, "Unavailable")
 		return
@@ -275,10 +276,11 @@ func (a *api) listFacePeople(w http.ResponseWriter, r *http.Request) {
 	if !a.requireSuperAdmin(w, r) {
 		return
 	}
-	rows, err := a.db.QueryContext(r.Context(), `SELECT p.id,p.display_name,g.capture_id,p.reference_group_id,p.account_id,
-		a.active,c.deleted_at IS NULL,rc.capture_id IS NOT NULL,COALESCE(g.model_version,'')
+	rows, err := a.db.QueryContext(r.Context(), `SELECT p.id,p.display_name,g.capture_id,p.reference_group_id,
+		a.active,c.deleted_at IS NULL,rc.cross_account_confirmed_at IS NOT NULL,
+		p.cross_account_confirmed_at IS NOT NULL,COALESCE(g.model_version,'')
 		FROM face_people p JOIN face_groups g ON g.id=p.reference_group_id
-		JOIN captures c ON c.id=g.capture_id JOIN accounts a ON a.id=p.account_id
+		JOIN captures c ON c.id=g.capture_id AND c.account_id=p.account_id JOIN accounts a ON a.id=p.account_id
 		LEFT JOIN face_research_captures rc ON rc.capture_id=c.id ORDER BY p.consent_confirmed_at,p.id`)
 	if err != nil {
 		failure(w, 503, "Unavailable")
@@ -295,13 +297,13 @@ func (a *api) listFacePeople(w http.ResponseWriter, r *http.Request) {
 	people := []person{}
 	for rows.Next() {
 		var p person
-		var owner, version string
-		var active, live, optedIn bool
-		if err := rows.Scan(&p.ID, &p.DisplayName, &p.CaptureID, &p.FaceGroupID, &owner, &active, &live, &optedIn, &version); err != nil {
+		var version string
+		var active, live, optedIn, enrollmentConfirmed bool
+		if err := rows.Scan(&p.ID, &p.DisplayName, &p.CaptureID, &p.FaceGroupID, &active, &live, &optedIn, &enrollmentConfirmed, &version); err != nil {
 			failure(w, 503, "Unavailable")
 			return
 		}
-		p.Eligible = owner == researchAccountID() && active && live && optedIn && version == faceModelVersion && calibratedFaceResearch()
+		p.Eligible = active && live && optedIn && enrollmentConfirmed && version == faceModelVersion && calibratedFaceResearch()
 		people = append(people, p)
 	}
 	if rows.Err() != nil {
@@ -323,13 +325,14 @@ func (a *api) removeFacePerson(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-func loadResearchCandidates(ctx context.Context, tx *sql.Tx, owner string) ([]researchCandidate, error) {
+func loadResearchCandidates(ctx context.Context, tx *sql.Tx) ([]researchCandidate, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT p.id,p.display_name,g.capture_id,g.model_version,g.embedding
 		FROM face_people p JOIN face_groups g ON g.id=p.reference_group_id
 		JOIN captures c ON c.id=g.capture_id JOIN accounts a ON a.id=p.account_id
-		JOIN face_research_captures rc ON rc.capture_id=c.id
-		WHERE p.account_id=? AND c.account_id=p.account_id AND a.active=1 AND c.deleted_at IS NULL
-		AND g.model_version=?`, owner, faceModelVersion)
+		JOIN face_research_captures rc ON rc.capture_id=c.id AND rc.cross_account_confirmed_at IS NOT NULL
+		WHERE c.account_id=p.account_id AND a.active=1 AND c.deleted_at IS NULL
+		AND p.cross_account_confirmed_at IS NOT NULL
+		AND g.model_version=?`, faceModelVersion)
 	if err != nil {
 		return nil, err
 	}

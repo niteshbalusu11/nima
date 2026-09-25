@@ -114,7 +114,7 @@ export default function FaceGallery({ captureId, token, video, onSelectCapture }
       <strong>Research demo</strong>
       {research.status === 'disabled' && research.opt_in_allowed && <>
         <label><input type="checkbox" checked={optInConsent} onChange={event => setOptInConsent(event.target.checked)} />
-          Every visible participant agreed to cloud upload and face comparison for this capture.</label>
+          Every visible participant agreed to cloud upload and face comparison with other consented captures, including those owned by other accounts.</label>
         <button disabled={busy || !optInConsent} onClick={() => {
           void mutate(() => api('PUT', `/super-admin/captures/${captureId}/face-research`, token, { consent_confirmed: true }))
             .then(succeeded => { if (succeeded) setOptInConsent(false) })
@@ -145,7 +145,7 @@ export default function FaceGallery({ captureId, token, video, onSelectCapture }
     </div>
     {enrollFace && <form className="dash-enroll" onSubmit={enroll}>
       <strong>Enroll participant</strong>
-      <p>Use a research label only for someone who agreed to named enrollment and future comparison in this study.</p>
+      <p>Use a research label only for someone who agreed to named enrollment and comparison with other consented captures, including those owned by other accounts.</p>
       <input aria-label="Participant name" maxLength={80} value={name} onChange={event => setName(event.target.value)} autoFocus />
       <label><input type="checkbox" checked={enrollConsent} onChange={event => setEnrollConsent(event.target.checked)} /> I confirmed this participant's enrollment consent.</label>
       <button disabled={busy || !enrollConsent || !name.trim()}>Enroll</button>
