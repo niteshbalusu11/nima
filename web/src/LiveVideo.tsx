@@ -190,10 +190,12 @@ export default function LiveVideo({ captureId, token }: { captureId: string; tok
           if (!count) setMessage('Waiting for video…')
           if (count && Date.now() - lastReceivedAt > 3500) {
             setMessage(userPaused.current ? 'Paused' : detail.finished ? 'Recording finished' : 'No new fragments')
-            if (video.buffered.length && !video.paused &&
-              video.currentTime >= video.buffered.end(video.buffered.length - 1) - 0.01) {
-              autoPaused = true
-              video.pause()
+            if (video.buffered.length && !video.paused) {
+              const remaining = video.buffered.end(video.buffered.length - 1) - video.currentTime
+              if (remaining <= 0.01 || (remaining <= 0.15 && video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA)) {
+                autoPaused = true
+                video.pause()
+              }
             }
           }
           if (detail.objects.length === 50 && lastSequence === detail.objects[49].sequence) continue

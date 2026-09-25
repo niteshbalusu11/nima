@@ -11,6 +11,7 @@ let requests: string[]
 let appended: number[]
 let ranges: { start: number; end: number }[]
 let paused: boolean
+let readyState: number
 
 // Exercise the component's real fetch, cursor, append and playback loop, with
 // one-second fragments and only the browser's media APIs replaced.
@@ -46,6 +47,7 @@ beforeEach(() => {
   appended = []
   ranges = []
   paused = true
+  readyState = HTMLMediaElement.HAVE_FUTURE_DATA
   vi.spyOn(URL, 'createObjectURL').mockImplementation(() => {
     ranges = []
     return 'blob:test-video'
@@ -57,6 +59,7 @@ beforeEach(() => {
     end: (index: number) => ranges[index].end,
   }))
   vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockImplementation(() => paused)
+  vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockImplementation(() => readyState)
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(async function () {
     paused = false
     this.dispatchEvent(new Event('play'))
@@ -227,4 +230,18 @@ test('does not pause before the last frames have played', async () => {
   container.querySelector('video')!.currentTime = 27.8
   await tick(4800)
   expect(paused).toBe(false)
+})
+
+test('stops buffering at the end of an idle recording and resumes for new fragments', async () => {
+  available = 3
+  await mount()
+  container.querySelector('video')!.currentTime = 2.95
+  readyState = HTMLMediaElement.HAVE_CURRENT_DATA
+  await tick(4800)
+  expect(paused).toBe(true)
+  expect(container.textContent).toContain('No new fragments')
+  available = 4
+  await tick()
+  expect(paused).toBe(false)
+  expect(appended).toEqual([1, 2, 3, 4])
 })
