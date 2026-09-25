@@ -28,10 +28,7 @@ struct SignedMediaCheck {
         config.sessionA.deviceId = recorder.id; config.sessionB.deviceId = recipient.id
         let a = try PeerStore(api: apiA, session: config.sessionA, device: recorder, root: config.root.appendingPathComponent("peers"))
         let b = try PeerStore(api: apiB, session: config.sessionB, device: recipient, root: config.root.appendingPathComponent("peers"))
-        let invite = try await a.createInvitation(for: PeerCode.contact(server: config.baseUrl, device: recipient))
-        try await b.acceptInvitation(PeerCode.invitation(server: config.baseUrl, token: invite.token))
-        let approval = await b.snapshot().approvals[0]
-        try await a.refresh()
+        let approval = try await PairingFixture.approve(a, b, identity, recipientIdentity).approval
         try await checkOwner(config: config, identity: identity, peers: a, recipient: b, approval: approval)
         let now = Int64(Date().timeIntervalSince1970)
         let descriptor = try MediaRecords.sign(.descriptor(.init(captureId: "00112233-4455-6677-8899-aabbccddeeff",

@@ -46,20 +46,18 @@ func setupRelay(t *testing.T) relayFixture {
 	c, accountC := enrollTest(t, h)
 	keys := newTestDeviceKeys(t)
 	owner := registerTest(t, h, a, accountA, keys)
-	recipient := registerTest(t, h, b, accountB, newTestDeviceKeys(t))
-	third := registerTest(t, h, c, accountC, newTestDeviceKeys(t))
-	approve := func(token string, d device) peerApproval {
-		invitation := peerInvitationTest(t, h, a, d)
-		status, body := request(t, h.server.URL, "POST", "/peer-invitations/accept", token, map[string]string{"token": invitation.Token})
-		mustStatus(t, 201, status, body)
-		var approval peerApproval
-		if err := json.Unmarshal(body, &approval); err != nil {
-			t.Fatal(err)
-		}
-		return approval
+	recipientKeys, thirdKeys := newTestDeviceKeys(t), newTestDeviceKeys(t)
+	recipient := registerTest(t, h, b, accountB, recipientKeys)
+	third := registerTest(t, h, c, accountC, thirdKeys)
+	authority, _ := nearbyCredentialTest(t, h, a)
+	approve := func(token string, d device, recipientKeys testDeviceKeys) peerApproval {
+		p := signedPermissionTest(t, authority, owner, d, keys, recipientKeys)
+		status, body := request(t, h.server.URL, "PUT", "/peer-approvals/"+p.Approval.ID, token, map[string]any{"permission": p})
+		mustStatus(t, 200, status, body)
+		return p.Approval
 	}
 	f := relayFixture{h: h, a: a, b: b, c: c, owner: owner, recipient: recipient, third: third, keys: keys,
-		approval: approve(b, recipient), approvalC: approve(c, third), id: "00112233-4455-6677-8899-aabbccddeeff"}
+		approval: approve(b, recipient, recipientKeys), approvalC: approve(c, third, thirdKeys), id: "00112233-4455-6677-8899-aabbccddeeff"}
 	key, _ := base64.RawURLEncoding.DecodeString(owner.SigningPublicKey)
 	hash := sha256.Sum256(key)
 	p := mediaTestPayload("capture", mediaTestID(f.id), mediaTestID(accountA), mediaTestID(owner.ID), hash[:], []byte{1}, mediaTestU64(uint64(time.Now().Unix())))

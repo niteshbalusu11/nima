@@ -1,5 +1,7 @@
 # Nearby replication and delegated cloud upload: engineering plan
 
+> Historical plan. Wi-Fi Aware has replaced the Bonjour transport and manual peer-code flow described here; that runtime code and its endpoints are removed. See the [Wi-Fi Aware plan](wifi-aware-plan.md) for the current design and [pilot guide](nearby-pilot.md) for current verification.
+
 Status: milestones 0–6 are implemented and pass native loopback/RustFS integration checks as of 2026-09-24. Physical-device and Tigris gates in milestone 7 remain open. See [the pilot guide](nearby-pilot.md). Code inspected at `311096f`; incorporates [PR #3](https://github.com/niteshbalusu11/streamvideo/pull/3), head `33b6e1a`, and the user's subsequent decisions. Platform research and the PR assessment are in [the research note](research/nearby-offline-sharing.md).
 
 ## 1. Outcome and scope

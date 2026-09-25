@@ -74,7 +74,7 @@ final class NearbySharing: ObservableObject {
         selected = Set(since.keys)
         synchronizeSenders()
     }
-    func receive(from approval: PeerApproval?) throws {
+    func stopReceiving() {
         resolveConsent(false)
         #if os(iOS)
         if #available(iOS 26.0, *) { aware.stopReceiving() }
@@ -112,7 +112,7 @@ final class NearbySharing: ObservableObject {
     @available(iOS 26.0, *)
     func join(_ device: WAPairedDevice) throws {
         guard active else { throw CancellationError() }
-        try receive(from: nil)
+        stopReceiving()
         receiving = "joining"; receiveStatus = "Connecting"; idleTimer()
         do {
             try aware.join(device: device, peers: peers, identity: signingIdentity, store: store,
@@ -164,7 +164,7 @@ final class NearbySharing: ObservableObject {
                 #if os(iOS)
                 if #available(iOS 26.0, *) { aware.retainPermissions(Set(approvals.map(\.id))) }
                 #endif
-                if let receiving, receiving != "joining", !approvals.contains(where: { $0.id == receiving }) { try? receive(from: nil) }
+                if let receiving, receiving != "joining", !approvals.contains(where: { $0.id == receiving }) { stopReceiving() }
             }
         })
         tasks.append(Task { [weak self] in

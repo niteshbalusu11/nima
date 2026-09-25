@@ -94,7 +94,7 @@ private struct NearbyControls: View {
             } else {
                 Section {
                     Text(nearby.receiveStatus)
-                    Button("Stop receiving", role: .destructive) { Task { try? await model.receiveNearby(from: nil) } }
+                    Button("Stop receiving", role: .destructive) { Task { try? await model.stopReceivingNearby() } }
                 } header: { Text("Receiving") } footer: { Text("Keep Nima open. Saved copies back up to the recorder’s account when online.") }
             }
             Section {
@@ -143,7 +143,7 @@ private struct NearbyControls: View {
                 Button("Cancel", role: .cancel) { nearby.resolveConsent(false) }
         } message: { Text("Save their photos and videos on this phone and upload them to their account using your connection.") }
         .interactiveDismissDisabled(nearby.receiving != nil)
-        .onChange(of: nearby.receiving) { _, value in if value == nil { Task { try? await model.receiveNearby(from: nil) } } }
+        .onChange(of: nearby.receiving) { _, value in if value == nil { Task { try? await model.stopReceivingNearby() } } }
     }
     private func prepare() async {
         do {

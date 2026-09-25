@@ -22,7 +22,6 @@ func TestSwiftPeerApprovals(t *testing.T) {
 	h := setup(t)
 	a, ownerA := enrollTest(t, h)
 	b, ownerB := enrollTest(t, h)
-	c, ownerC := enrollTest(t, h)
 	execTest(t, h.db, "UPDATE accounts SET name='Recorder' WHERE id=?", ownerA)
 	execTest(t, h.db, "UPDATE accounts SET name='Recipient' WHERE id=?", ownerB)
 	// Capture a real server snapshot, then withhold its delivery until the Swift
@@ -97,7 +96,6 @@ func TestSwiftPeerApprovals(t *testing.T) {
 		"base_url": server.URL, "cache_root": filepath.Join(root, "cache"),
 		"session_a": map[string]string{"token": a, "account_id": ownerA, "role": "member"},
 		"session_b": map[string]string{"token": b, "account_id": ownerB, "role": "member"},
-		"session_c": map[string]string{"token": c, "account_id": ownerC, "role": "member"},
 	})
 	if err != nil {
 		t.Fatal(err)

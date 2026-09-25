@@ -6,7 +6,7 @@
 <key>NSLocationWhenInUseUsageDescription</key><string>Attach your location to photo and video uploads.</string>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
 <key>NSLocalNetworkUsageDescription</key><string>Share live photos and videos with people you approve nearby.</string>
-<key>NSBonjourServices</key><array><string>_uv-media._tcp</string><string>_uv-probe._tcp</string><string>_nima-media._tcp</string></array>
+<key>NSBonjourServices</key><array><string>_nima-media._tcp</string></array>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
 <key>WiFiAwareServices</key><dict><key>_nima-media._tcp</key><dict><key>Publishable</key><dict/><key>Subscribable</key><dict/></dict></dict>
 </dict></plist>

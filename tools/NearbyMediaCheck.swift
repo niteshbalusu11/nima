@@ -123,11 +123,11 @@ struct NearbyMediaCheck {
         let reopenedQueue = try UploadQueue(root: config.root.appendingPathComponent("phone-0/PendingMedia"), budget: budgets[0])
         let imported = try await source.prepare(captureId: importedId, queue: reopenedQueue, approvalIDs: Set(approvals.map(\.id)))
         try expect(imported == nil, "Library import was broadcast without nearby consent")
-        let receiverB = NearbyReceiver(), receiverC = NearbyReceiver(), receiverD = NearbyReceiver()
+        let receiverB = LoopbackMediaReceiver(), receiverC = LoopbackMediaReceiver(), receiverD = LoopbackMediaReceiver()
         let receivers = [receiverB, receiverC, receiverD]
         var ports = [UInt16](repeating: 0, count: 3)
         for index in 1...3 {
-            try receivers[index - 1].start(identity: identities[index].tlsIdentity(), approval: approval(index), store: stores[index], localOnly: true,
+            try receivers[index - 1].start(identity: identities[index], approval: approval(index), store: stores[index],
                 listening: { ports[index - 1] = $0 }, status: { _ in })
         }
         defer { receivers.forEach { $0.stop() } }
@@ -137,9 +137,11 @@ struct NearbyMediaCheck {
         var channels: [NearbyChannel] = []
         var sendTasks: [Task<Void, Error>] = []
         func connect(_ index: Int) async throws {
-            let parameters = try NearbyChannel.parameters(identity: tlsA, approval: approval(index), store: peers[0])
+            let parameters = try NearbyChannel.pairingParameters(identity: tlsA)
             let channel = NearbyChannel(NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: ports[index - 1])!, using: parameters))
             try await channel.start(); channels.append(channel)
+            let paired = try await NearbyPairing.send(channel: channel, store: peers[0], identity: identities[0])
+            try expect(paired.samePermission(as: approval(index)), "Reconnection changed permission")
             sendTasks.append(Task { try await NearbyTransfer.send(channel: channel, approval: approval(index), source: { deliveries }, progress: { _, _ in }) })
         }
         try await connect(1); try await connect(2); try await connect(3)

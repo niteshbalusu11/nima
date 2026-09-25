@@ -250,9 +250,6 @@ func (a *api) revokeDevice(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		_, err = tx.ExecContext(r.Context(), "UPDATE peer_approvals SET revoked_at=COALESCE(revoked_at,?) WHERE sender_device_id=? OR recipient_device_id=?", now, id, id)
 	}
-	if err == nil {
-		_, err = tx.ExecContext(r.Context(), "DELETE FROM peer_invitations WHERE sender_device_id=? OR recipient_device_id=?", id, id)
-	}
 	if err != nil || tx.Commit() != nil {
 		failure(w, 503, "Unavailable")
 		return

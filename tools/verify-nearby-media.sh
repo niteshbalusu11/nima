@@ -3,8 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 nearby_build="$PWD/.build/nearby-media"
 mkdir -p "$nearby_build/Sources/Check"
-cp UploadVideo/{API,DeviceIdentity,NearbyPermission,NearbyPairing,PeerStore,MediaRecords,MediaStorageBudget,UploadQueue,OwnerMediaRecords,ReceivedMediaStore,UploadSlots,RelayUploadWorker,NearbyChannel,NearbyTransfer,NearbyTransport,LivePlayback,SegmentWriter,PhotoLibrary,CaptureLibrary}.swift \
-   tools/{MediaProbe,NearbyMediaCheck}.swift "$nearby_build/Sources/Check/"
+rm -f "$nearby_build/Sources/Check/"*.swift
+cp UploadVideo/{API,DeviceIdentity,NearbyPermission,NearbyPairing,PeerStore,MediaRecords,MediaStorageBudget,UploadQueue,OwnerMediaRecords,ReceivedMediaStore,UploadSlots,RelayUploadWorker,NearbyChannel,NearbyTransfer,LivePlayback,SegmentWriter,PhotoLibrary,CaptureLibrary}.swift \
+   tools/{MediaProbe,NearbyMediaCheck,LoopbackMediaReceiver}.swift "$nearby_build/Sources/Check/"
 python3 - "$nearby_build/Package.swift" <<'PY'
 import json, pathlib, sys
 pins = json.loads(pathlib.Path('UploadVideo.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved').read_text())['pins']

@@ -133,11 +133,10 @@ final class AppModel: ObservableObject {
         try nearby.join(device)
         location.stop(); camera?.suspend()
     }
-    func receiveNearby(from approval: PeerApproval?) async throws {
+    func stopReceivingNearby() async throws {
         guard !recording, !stopping, !preparingCapture else { throw APIError(status: 0, message: "Finish recording first") }
-        try nearby?.receive(from: approval)
-        if approval != nil { location.stop(); camera?.suspend() }
-        else if active { await startCamera() }
+        nearby?.stopReceiving()
+        if active { await startCamera() }
     }
     func startScanning() async {
         scanning = true; message = nil

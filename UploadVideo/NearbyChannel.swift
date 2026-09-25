@@ -20,7 +20,6 @@ struct NearbyControl: Codable, Sendable {
 
 @MainActor
 final class NearbyChannel {
-    static let service = "_uv-media._tcp"
     private let connection: NWConnection
     private var pending: [UUID: CheckedContinuation<Data, Error>] = [:]
     private var deadline: Task<Void, Never>?
@@ -60,39 +59,6 @@ final class NearbyChannel {
         guard kind == 1 else { throw MediaRecords.failure("Invalid pairing message") }
         return try JSONDecoder().decode(NearbyPairing.Message.self, from: data)
     }
-
-    static func parameters(identity: SecIdentity, approval: PeerApproval, store: PeerStore) throws -> NWParameters {
-        guard let local = sec_identity_create(identity), approval.sender == store.device || approval.recipient == store.device else {
-            throw MediaRecords.failure("Invalid sharing identity")
-        }
-        let peer = approval.sender == store.device ? approval.recipient : approval.sender
-        var certificate: SecCertificate?
-        guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess,
-              let certificate, let key = SecCertificateCopyKey(certificate),
-              SecKeyCopyExternalRepresentation(key, nil) as Data? == DeviceIdentity.decodeURL(store.device.tlsPublicKey) else {
-            throw MediaRecords.failure("Nearby key does not match this phone")
-        }
-        guard let expected = DeviceIdentity.decodeURL(peer.tlsPublicKey) else { throw MediaRecords.failure("Invalid approved key") }
-        let tls = NWProtocolTLS.Options()
-        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, local)
-        sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv13)
-        sec_protocol_options_set_peer_authentication_required(tls.securityProtocolOptions, true)
-        sec_protocol_options_set_verify_block(tls.securityProtocolOptions, { _, remote, complete in
-            let callback = Verification(complete: complete)
-            let trust = sec_trust_copy_ref(remote).takeRetainedValue()
-            let certificates = SecTrustCopyCertificateChain(trust) as? [SecCertificate]
-            let key = certificates?.first.flatMap { SecCertificateCopyKey($0) }
-            let actual = key.flatMap { SecKeyCopyExternalRepresentation($0, nil) as Data? }
-            Task {
-                let snapshot = await store.snapshot()
-                callback.complete(actual == expected && snapshot.approvals.contains { $0.samePermission(as: approval) })
-            }
-        }, .main)
-        let parameters = NWParameters(tls: tls, tcp: NWProtocolTCP.Options())
-        parameters.includePeerToPeer = true
-        return parameters
-    }
-    private struct Verification: @unchecked Sendable { let complete: (Bool) -> Void }
 
     func start() async throws {
         guard !started else { throw MediaRecords.failure("Connection already started") }
