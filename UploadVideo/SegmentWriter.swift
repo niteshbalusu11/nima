@@ -71,6 +71,10 @@ final class SegmentWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendable 
         video.markAsFinished(); audio?.markAsFinished()
         writer.finishWriting { [self] in completion(writer.status == .completed) }
     }
+    var emittedObjectCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return sequence
+    }
     func assetWriter(_ writer: AVAssetWriter, didOutputSegmentData segmentData: Data,
                      segmentType: AVAssetSegmentType, segmentReport: AVAssetSegmentReport?) {
         lock.lock(); defer { lock.unlock() }

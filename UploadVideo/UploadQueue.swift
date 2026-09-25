@@ -20,6 +20,13 @@ struct CaptureLocation: Codable, Equatable, Sendable {
     let timestamp: Int64
 }
 
+enum CaptureEnding: String, Codable, Sendable { case stopped, interrupted }
+struct CaptureTerminal: Codable, Sendable {
+    let ending: CaptureEnding
+    let objectCount: Int
+    let totalBytes: Int
+}
+
 struct QueuedObject: Codable, Sendable, Identifiable {
     let id: UUID
     let accountId: String
@@ -35,6 +42,7 @@ struct QueuedObject: Codable, Sendable, Identifiable {
     let createdAt: Date
     let location: CaptureLocation?
     var acknowledged: Bool
+    var terminal: CaptureTerminal? = nil
     var reservation: Data {
         get throws {
             struct Body: Encodable {
@@ -96,6 +104,9 @@ final class UploadQueue: @unchecked Sendable {
                  location: CaptureLocation? = nil) throws {
         lock.lock(); defer { lock.unlock() }
         guard !deleted.contains("\(accountId)/\(captureId)") else { throw APIError(status: 410, message: "Capture deleted") }
+        guard !items.contains(where: { $0.accountId == accountId && $0.captureId == captureId && $0.terminal != nil }) else {
+            throw APIError(status: 409, message: "Recording already ended")
+        }
         try checkSpaceLocked(additional: data.count)
         let item = QueuedObject(id: UUID(), accountId: accountId, captureId: captureId, captureKind: captureKind,
                                 sequence: sequence, kind: kind,
@@ -125,6 +136,27 @@ final class UploadQueue: @unchecked Sendable {
         return items.filter { $0.accountId == accountId && !$0.acknowledged }.count
     }
     func file(_ item: QueuedObject) -> URL { folder(item).appendingPathComponent("media") }
+    func retainedObjects(accountId: String, captureId: String) -> [QueuedObject] {
+        lock.lock(); defer { lock.unlock() }
+        return items.filter { $0.accountId == accountId && $0.captureId == captureId }.sorted { $0.sequence < $1.sequence }
+    }
+    func finishCapture(accountId: String, captureId: String, ending: CaptureEnding, expectedObjects: Int) throws {
+        lock.lock(); defer { lock.unlock() }
+        let parts = items.filter { $0.accountId == accountId && $0.captureId == captureId }.sorted { $0.sequence < $1.sequence }
+        guard !deleted.contains("\(accountId)/\(captureId)"), let last = parts.last, parts.count == expectedObjects,
+              parts.enumerated().allSatisfy({ $0.offset == $0.element.sequence }),
+              let index = items.firstIndex(where: { $0.id == last.id }) else { throw APIError(status: 0, message: "Recording ending is unknown") }
+        let terminal = CaptureTerminal(ending: ending, objectCount: parts.count, totalBytes: parts.reduce(0) { $0 + $1.size })
+        if let old = last.terminal {
+            guard old.ending == ending, old.objectCount == terminal.objectCount, old.totalBytes == terminal.totalBytes else {
+                throw APIError(status: 0, message: "Conflicting recording ending")
+            }
+            return
+        }
+        var updated = last; updated.terminal = terminal
+        try JSONEncoder().encode(updated).write(to: folder(last).appendingPathComponent("item.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        items[index] = updated
+    }
     func captures(accountId: String) -> [LocalCapture] {
         lock.lock(); defer { lock.unlock() }
         return Dictionary(grouping: items.filter { $0.accountId == accountId }, by: \.captureId).values.map { group in

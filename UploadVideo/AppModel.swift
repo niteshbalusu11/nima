@@ -224,7 +224,7 @@ final class AppModel: ObservableObject {
         if captures != updated { captures = updated }
     }
     private func invalidateSession() {
-        camera?.stopRecording(); session = nil; try? SessionKeychain.clear(); stopUploads()
+        camera?.stopRecording(interrupted: true); session = nil; try? SessionKeychain.clear(); stopUploads()
         location.stop()
         scanning = false; cameraMode = .back; camera?.suspend(); message = "Enter invite"
         captures = []
@@ -274,7 +274,7 @@ final class AppModel: ObservableObject {
                             failures += 1
                             if let apiError = error as? APIError, [400, 409, 413].contains(apiError.status) {
                                 self.uploadErrors[kind] = apiError.status == 413 ? "Storage full" : "Upload paused"
-                                self.captureBlocked = true; self.camera?.stopRecording()
+                                self.captureBlocked = true; self.camera?.stopRecording(interrupted: true)
                             } else { self.uploadErrors[kind] = "Offline" }
                             try? await Task.sleep(for: .seconds(min(30, pow(2, Double(min(failures, 5))))))
                         }

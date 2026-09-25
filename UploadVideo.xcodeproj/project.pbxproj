@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A01D842B7B46ED112BD0001A /* OwnerMediaRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0001B /* OwnerMediaRecords.swift */; };
+		A01D842B7B46ED112BD00018 /* ReceivedMediaStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00019 /* ReceivedMediaStore.swift */; };
+		A01D842B7B46ED112BD00016 /* MediaRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00017 /* MediaRecords.swift */; };
 		A01D842B7B46ED112BD00013 /* X509 in Frameworks */ = {isa = PBXBuildFile; productRef = A01D842B7B46ED112BD00014 /* X509 */; };
 		A01D842B7B46ED112BD00011 /* PeerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00012 /* PeerStore.swift */; };
 		A01D842B7B46ED112BD0000F /* NearbySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00010 /* NearbySettingsView.swift */; };
@@ -32,6 +35,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A01D842B7B46ED112BD0001B /* OwnerMediaRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnerMediaRecords.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00019 /* ReceivedMediaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedMediaStore.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00017 /* MediaRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRecords.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD00012 /* PeerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerStore.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD00010 /* NearbySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbySettingsView.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD0000E /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
@@ -113,6 +119,9 @@
 				A01D842B7B46ED112BD00002 /* AuthView.swift */,
 				A01D842B7B46ED112BD00004 /* InviteView.swift */,
 				A01D842B7B46ED112BD00008 /* GalleryView.swift */,
+				A01D842B7B46ED112BD00017 /* MediaRecords.swift */,
+				A01D842B7B46ED112BD00019 /* ReceivedMediaStore.swift */,
+				A01D842B7B46ED112BD0001B /* OwnerMediaRecords.swift */,
 				A01D842B7B46ED112BD00012 /* PeerStore.swift */,
 				A01D842B7B46ED112BD0000E /* DeviceIdentity.swift */,
 				A01D842B7B46ED112BD00010 /* NearbySettingsView.swift */,
@@ -200,6 +209,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A01D842B7B46ED112BD00016 /* MediaRecords.swift in Sources */,
+				A01D842B7B46ED112BD00018 /* ReceivedMediaStore.swift in Sources */,
+				A01D842B7B46ED112BD0001A /* OwnerMediaRecords.swift in Sources */,
 				A01D842B7B46ED112BD00011 /* PeerStore.swift in Sources */,
 				A01D842B7B46ED112BD0000D /* DeviceIdentity.swift in Sources */,
 				A01D842B7B46ED112BD0000F /* NearbySettingsView.swift in Sources */,

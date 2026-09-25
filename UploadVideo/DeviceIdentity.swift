@@ -133,6 +133,17 @@ struct DeviceIdentity: Sendable {
         return device
     }
 
+    func matches(_ device: RegisteredDevice) -> Bool {
+        device.isValid && device.signingPublicKey == Self.encodeURL(signing.publicKey.x963Representation)
+            && device.tlsPublicKey == Self.encodeURL(tls.publicKey.x963Representation)
+    }
+    func signMedia(_ payload: Data) throws -> Data {
+        guard payload.count <= 512, payload.starts(with: Data("uploadvideo.media.".utf8)) else {
+            throw Self.identityError("Invalid media signing domain")
+        }
+        return try signing.signature(for: payload).derRepresentation
+    }
+
     #if canImport(X509)
     // The certificate is only a TLS key container. Trust comes from the approved
     // public key, so regenerating this self-signed certificate does not change identity.

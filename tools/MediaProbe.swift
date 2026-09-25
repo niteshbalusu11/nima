@@ -63,6 +63,7 @@ struct MediaProbe {
         }
         let completed = await withCheckedContinuation { continuation in writer.finish { continuation.resume(returning: $0) } }
         guard completed, liveVerified else { fatalError("Encoder failed") }
+        try queue.finishCapture(accountId: session.accountId, captureId: videoID, ending: .stopped, expectedObjects: writer.emittedObjectCount)
         for _ in 0..<200 {
             if queue.pending(accountId: session.accountId) == 0 { break }
             try await Task.sleep(for: .milliseconds(50))
@@ -73,6 +74,8 @@ struct MediaProbe {
         // Reopening the queue must preserve saved state rather than uploading everything again.
         let reopened = try UploadQueue(root: root)
         guard reopened.pending(accountId: session.accountId) == 0 else { fatalError("Acknowledgments were not durable") }
+        let retained = reopened.retainedObjects(accountId: session.accountId, captureId: videoID)
+        precondition(retained.last?.terminal?.ending == .stopped && retained.last?.terminal?.objectCount == writer.emittedObjectCount)
         let gallery = reopened.captures(accountId: session.accountId)
         precondition(gallery.count == 2 && gallery.allSatisfy { $0.uploaded && $0.playable })
         let library = CaptureLibrary()
