@@ -158,6 +158,20 @@ final class AppModel: ObservableObject {
         } else { camera?.takePhoto(location: locationEnabled ? location.current : nil) }
     }
     func takePhoto() { if !managingCapture && !captureBlocked { camera?.takePhoto(location: locationEnabled ? location.current : nil) } }
+    func importPhoto(_ original: Data) async throws {
+        guard let session, let queue, !queueFailure else { throw APIError(status: 0, message: "Could not import photo") }
+        let jpeg = try await Task.detached(priority: .utility) { try ImportedPhotoEncoder.jpeg(original) }.value
+        try queue.enqueue(jpeg, accountId: session.accountId, captureId: UUID().uuidString.lowercased(),
+                          captureKind: "photo", sequence: 0, kind: "photo")
+        refreshCaptures()
+    }
+    func importVideo(_ url: URL) async throws {
+        guard let session, let queue, !queueFailure else { throw APIError(status: 0, message: "Could not import video") }
+        try await Task.detached(priority: .utility) {
+            try await ImportedVideoEncoder.enqueue(url, queue: queue, accountId: session.accountId)
+        }.value
+        refreshCaptures()
+    }
     func reviewCaptures(_ value: Bool) async {
         reviewing = value
         if value { location.stop(); camera?.suspend() }

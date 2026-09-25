@@ -1,9 +1,29 @@
 import SwiftUI
 import AVKit
+import PhotosUI
+import CoreTransferable
+import UniformTypeIdentifiers
+
+private struct PickedVideo: Transferable {
+    let url: URL
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .movie) { video in
+            SentTransferredFile(video.url)
+        } importing: { received in
+            let name = UUID().uuidString + "." + (received.file.pathExtension.isEmpty ? "mov" : received.file.pathExtension)
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            return Self(url: copy)
+        }
+    }
+}
 
 struct GalleryView: View {
     @ObservedObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedItems: [PhotosPickerItem] = []
+    @State private var importing = false
+    @State private var importError: String?
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -33,10 +53,50 @@ struct GalleryView: View {
             .overlay {
                 if model.captures.isEmpty { ContentUnavailableView("No captures", systemImage: "photo.on.rectangle") }
             }
-            .interactiveDismissDisabled(model.managingCapture)
+            .safeAreaInset(edge: .bottom) {
+                if importing { ProgressView("Importing…").padding().frame(maxWidth: .infinity).background(.regularMaterial) }
+            }
+            .interactiveDismissDisabled(model.managingCapture || importing)
             .navigationTitle("Recents").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(model.managingCapture) } }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    PhotosPicker(selection: $selectedItems, maxSelectionCount: 0, matching: .any(of: [.images, .videos])) {
+                        Text("Import")
+                    }.disabled(model.managingCapture || importing)
+                }
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(model.managingCapture || importing) }
+            }
+            .onChange(of: selectedItems) { _, items in
+                guard !items.isEmpty, !importing else { return }
+                Task { await importSelected(items) }
+            }
+            .alert("Could not import", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
+                Button("OK", role: .cancel) { }
+            } message: { Text(importError ?? "Try again") }
         }
+    }
+    private func importSelected(_ items: [PhotosPickerItem]) async {
+        importing = true
+        var failed = 0
+        for item in items {
+            do {
+                if item.supportedContentTypes.first?.conforms(to: .movie) == true {
+                    guard let video = try await item.loadTransferable(type: PickedVideo.self) else {
+                        throw APIError(status: 0, message: "Could not read video")
+                    }
+                    defer { try? FileManager.default.removeItem(at: video.url) }
+                    try await model.importVideo(video.url)
+                } else {
+                    guard let photo = try await item.loadTransferable(type: Data.self) else {
+                        throw APIError(status: 0, message: "Could not read photo")
+                    }
+                    try await model.importPhoto(photo)
+                }
+            } catch { failed += 1 }
+        }
+        selectedItems = []
+        importing = false
+        if failed > 0 { importError = failed == 1 ? "One item could not be imported." : "\(failed) items could not be imported." }
     }
     private func duration(_ value: Double) -> String {
         let seconds = Int(value.rounded())
