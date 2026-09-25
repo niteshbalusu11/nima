@@ -115,7 +115,10 @@ export default function FaceGallery({ captureId, token, video, onSelectCapture }
       {research.status === 'disabled' && research.opt_in_allowed && <>
         <label><input type="checkbox" checked={optInConsent} onChange={event => setOptInConsent(event.target.checked)} />
           Every visible participant agreed to cloud upload and face comparison for this capture.</label>
-        <button disabled={busy || !optInConsent} onClick={() => { void mutate(() => api('PUT', `/super-admin/captures/${captureId}/face-research`, token, { consent_confirmed: true })) }}>
+        <button disabled={busy || !optInConsent} onClick={() => {
+          void mutate(() => api('PUT', `/super-admin/captures/${captureId}/face-research`, token, { consent_confirmed: true }))
+            .then(succeeded => { if (succeeded) setOptInConsent(false) })
+        }}>
           Use for research comparison
         </button>
       </>}
@@ -124,6 +127,7 @@ export default function FaceGallery({ captureId, token, video, onSelectCapture }
         <button disabled={busy} onClick={() => {
           if (window.confirm('Opt out this capture? Its enrollments will be removed; the recording and anonymous face crops remain.'))
             void mutate(() => api<void>('DELETE', `/super-admin/captures/${captureId}/face-research`, token))
+              .then(succeeded => { if (succeeded) setOptInConsent(false) })
         }}>Opt out</button>
       </>}
     </div>}

@@ -45,6 +45,7 @@ export default function Dashboard() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [sourceCapture, setSourceCapture] = useState<Capture | null>(null)
   const sourceCaptureRef = useRef<Capture | null>(null)
+  const sourceRequest = useRef(0)
   const [photos, setPhotos] = useState<Record<string, string>>({})
   const [now, setNow] = useState(Date.now())
   const activity = useRef(new Map<string, { count: number; changed: number }>())
@@ -81,6 +82,27 @@ export default function Dashboard() {
       try {
         const feed = await api<Feed>('GET', '/super-admin/captures', session.token)
         if (!active) return
+        const source = sourceCaptureRef.current
+        if (source && !feed.captures.some(capture => capture.id === source.id)) {
+          const request = sourceRequest.current
+          try {
+            const latest = await api<Capture>('GET', `/super-admin/captures/${source.id}/summary`, session.token)
+            if (!active) return
+            if (sourceRequest.current === request && sourceCaptureRef.current?.id === source.id) {
+              sourceCaptureRef.current = latest
+              setSourceCapture(latest)
+            }
+          } catch (reason) {
+            if (!active) return
+            if (reason instanceof APIError && reason.status === 404 &&
+              sourceRequest.current === request && sourceCaptureRef.current?.id === source.id) {
+              sourceRequest.current++
+              sourceCaptureRef.current = null
+              setSourceCapture(null)
+              setPhotos(previous => { const next = { ...previous }; delete next[source.id]; return next })
+            } else if (!(reason instanceof APIError && reason.status === 404)) throw reason
+          }
+        }
         const current = Date.now()
         for (const capture of feed.captures) {
           const previous = activity.current.get(capture.id)
@@ -116,6 +138,8 @@ export default function Dashboard() {
   useEffect(() => {
     if (!authorized || !session) return
     const visible = captures.filter(capture => capture.kind === 'photo' && capture.acknowledged_objects > 0).slice(0, 12)
+    if (sourceCapture?.kind === 'photo' && sourceCapture.acknowledged_objects > 0 &&
+      !visible.some(capture => capture.id === sourceCapture.id)) visible.push(sourceCapture)
     for (const capture of visible) {
       if (photos[capture.id] || loadingPhotos.current.has(capture.id)) continue
       loadingPhotos.current.add(capture.id)
@@ -124,7 +148,7 @@ export default function Dashboard() {
         if (url && currentToken.current === session.token) setPhotos(previous => ({ ...previous, [capture.id]: url }))
       }).catch(() => {}).finally(() => loadingPhotos.current.delete(capture.id))
     }
-  }, [authorized, captures, photos, session])
+  }, [authorized, captures, photos, session, sourceCapture])
 
   useEffect(() => {
     if (!authorized) return
@@ -134,6 +158,9 @@ export default function Dashboard() {
       if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]')) return
       if (!captures.length) return
       event.preventDefault()
+      sourceRequest.current++
+      sourceCaptureRef.current = null
+      setSourceCapture(null)
       setSelectedId(current => {
         const direction = event.key === 'ArrowUp' ? -1 : 1
         let index = captures.findIndex(capture => capture.id === current)
@@ -179,17 +206,27 @@ export default function Dashboard() {
     setPhotos({})
     setSourceCapture(null)
     sourceCaptureRef.current = null
+    sourceRequest.current++
     activity.current.clear()
   }
 
   async function selectSourceCapture(id: string) {
+    const request = ++sourceRequest.current
     try {
       const capture = await api<Capture>('GET', `/super-admin/captures/${id}/summary`, session!.token)
+      if (request !== sourceRequest.current || currentToken.current !== session!.token) return
       sourceCaptureRef.current = capture
       setSourceCapture(capture)
       setSelectedId(capture.id)
       setError(null)
-    } catch { setError('Source capture unavailable') }
+    } catch { if (request === sourceRequest.current) setError('Source capture unavailable') }
+  }
+
+  function selectRecentCapture(id: string) {
+    sourceRequest.current++
+    sourceCaptureRef.current = null
+    setSourceCapture(null)
+    setSelectedId(id)
   }
 
   if (!session) return <main className="dash-login">
@@ -247,7 +284,7 @@ export default function Dashboard() {
             const active = capture.kind === 'video' && !capture.finished && capture.acknowledged_objects > 0 && now - changed < 8000
             return <button className={`dash-feed-row ${capture.id === selectedId ? 'selected' : ''}`} key={capture.id}
               ref={capture.id === selectedId ? selectedRow : null}
-              onClick={() => setSelectedId(capture.id)} aria-pressed={capture.id === selectedId}>
+              onClick={() => selectRecentCapture(capture.id)} aria-pressed={capture.id === selectedId}>
               {capture.kind === 'video'
                 ? <VideoThumbnail captureId={capture.id} token={session.token} available={capture.acknowledged_objects > 1} />
                 : <span className="dash-feed-thumb">{photos[capture.id]

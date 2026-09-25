@@ -15,7 +15,11 @@ beforeEach(() => {
   enabled = true
   vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:face')
   vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
-  vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+  vi.stubGlobal('fetch', vi.fn(async (input: string, options?: RequestInit) => {
+    if (input.endsWith('/face-research')) {
+      enabled = options?.method === 'PUT'
+      return { ok: true, status: 204 }
+    }
     if (input.endsWith('/faces')) {
       if (fail) return { ok: false, status: 503, json: async () => ({ error: 'Unavailable' }) }
       return { ok: true, status: 200, json: async () => ({
@@ -62,4 +66,18 @@ test('requires an explicit capture-consent check before opt-in', async () => {
   expect(button.disabled).toBe(true)
   await act(async () => (container.querySelector('input[type=checkbox]') as HTMLInputElement).click())
   expect(button.disabled).toBe(false)
+})
+
+test('requires fresh consent after opting out and back in', async () => {
+  enabled = false
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  await mount()
+  const optIn = () => [...container.querySelectorAll('button')].find(element => element.textContent?.includes('Use for research comparison'))!
+  await act(async () => (container.querySelector('input[type=checkbox]') as HTMLInputElement).click())
+  await act(async () => optIn().click())
+  expect(container.textContent).toContain('Possible matches enabled')
+  const optOut = [...container.querySelectorAll('button')].find(element => element.textContent === 'Opt out')!
+  await act(async () => optOut.click())
+  expect(optIn().disabled).toBe(true)
+  expect((container.querySelector('input[type=checkbox]') as HTMLInputElement).checked).toBe(false)
 })
