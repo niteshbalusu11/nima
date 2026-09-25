@@ -81,6 +81,7 @@ export default function LiveVideo({ captureId, token }: { captureId: string; tok
   const userPaused = useRef(false)
   const [parts, setParts] = useState(0)
   const [message, setMessage] = useState('Waiting for video…')
+  const [playback, setPlayback] = useState({ live: false })
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -107,32 +108,45 @@ export default function LiveVideo({ captureId, token }: { captureId: string; tok
     if (!video) return
     const controller = new AbortController()
     let sourceURL: string | undefined
+    let autoPaused = false
+    userPaused.current = false
+    video.currentTime = 0
+    setParts(0)
+    setMessage('Waiting for video…')
+    const played = () => { userPaused.current = false; autoPaused = false }
+    const paused = () => {
+      if (!autoPaused) { userPaused.current = true; setMessage('Paused') }
+    }
+    video.addEventListener('play', played)
+    video.addEventListener('pause', paused)
 
     async function run() {
       if (!video) return
       if (!window.MediaSource) { setMessage('This browser cannot play live video'); return }
       let buffer: SourceBuffer | undefined
       let lastSequence = -1
-      let firstRequest = true
       let firstMedia = true
       let started = false
-      let autoPaused = false
       let lastReceivedAt = 0
       let count = 0
+      const bufferedAhead = () => buffer && (!playback.live || userPaused.current) && video.buffered.length > 0 &&
+        video.buffered.end(video.buffered.length - 1) - video.currentTime > 30
       while (!controller.signal.aborted) {
         try {
-          const query = firstRequest ? '?tail=1' : `?after=${lastSequence}`
-          firstRequest = false
+          // Pause prefetch during replay. Fetch fresh signed URLs when playback
+          // catches up, rather than holding URLs while the viewer is paused.
+          if (bufferedAhead()) { await pause(500, controller.signal); continue }
+          const query = playback.live && firstMedia ? '?tail=1' : `?after=${lastSequence}`
           const response = await fetch(`/super-admin/captures/${captureId}${query}`, {
             headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', signal: controller.signal,
           })
           if (!response.ok) throw new Error(response.status === 403 || response.status === 401 ? 'Dashboard access ended' : 'Waiting for connection…')
           const detail = await response.json() as Detail
           for (const part of detail.objects) {
-            if (controller.signal.aborted || !part.acknowledged) break
+            if (controller.signal.aborted || !part.acknowledged || bufferedAhead()) break
             if (part.sequence <= lastSequence) continue
             if (!part.url) break
-            if (part.kind === 'media' && (!buffer || (!firstMedia && part.sequence !== lastSequence + 1))) break
+            if (part.kind === 'media' && (!buffer || (!(playback.live && firstMedia) && part.sequence !== lastSequence + 1))) break
             const media = await fetch(part.url, { cache: 'no-store', signal: controller.signal })
             if (!media.ok) throw new Error('Waiting for video fragment…')
             const bytes = await media.arrayBuffer()
@@ -147,7 +161,6 @@ export default function LiveVideo({ captureId, token }: { captureId: string; tok
               buffer = source.addSourceBuffer(type)
               await append(buffer, bytes, controller.signal)
             } else if (buffer) {
-              // The first request may start at a recent independent fragment.
               await append(buffer, bytes, controller.signal)
               firstMedia = false
               count++
@@ -156,7 +169,10 @@ export default function LiveVideo({ captureId, token }: { captureId: string; tok
               setMessage(userPaused.current ? 'Paused' : 'Playing uploaded video')
               if (video.buffered.length) {
                 const end = video.buffered.end(video.buffered.length - 1)
-                if (video.currentTime < video.buffered.start(0) || end - video.currentTime > 8) {
+                if (video.currentTime < video.buffered.start(0)) {
+                  video.currentTime = video.buffered.start(0)
+                }
+                if (playback.live && !userPaused.current && end - video.currentTime > 8) {
                   video.currentTime = Math.max(video.buffered.start(0), end - 2)
                 }
                 if (!userPaused.current && (!started || autoPaused)) {
@@ -173,9 +189,9 @@ export default function LiveVideo({ captureId, token }: { captureId: string; tok
           }
           if (!count) setMessage('Waiting for video…')
           if (count && Date.now() - lastReceivedAt > 3500) {
-            setMessage(userPaused.current ? 'Paused' : detail.finished ? 'Recording finished' : 'Waiting for next fragment…')
+            setMessage(userPaused.current ? 'Paused' : detail.finished ? 'Recording finished' : 'No new fragments')
             if (video.buffered.length && !video.paused &&
-              video.currentTime >= video.buffered.end(video.buffered.length - 1) - 0.3) {
+              video.currentTime >= video.buffered.end(video.buffered.length - 1) - 0.01) {
               autoPaused = true
               video.pause()
             }
@@ -193,24 +209,21 @@ export default function LiveVideo({ captureId, token }: { captureId: string; tok
     void run()
     return () => {
       controller.abort()
+      video.removeEventListener('play', played)
+      video.removeEventListener('pause', paused)
       video.pause()
       video.removeAttribute('src')
       video.load()
       if (sourceURL) URL.revokeObjectURL(sourceURL)
     }
-  }, [captureId, token])
+  }, [captureId, token, playback])
 
-  function goLive() {
-    const video = videoRef.current
-    if (!video?.buffered.length) return
-    userPaused.current = false
-    const end = video.buffered.end(video.buffered.length - 1)
-    video.currentTime = Math.max(video.buffered.start(video.buffered.length - 1), end - 2)
-    void video.play()
+  function startPlayback(live: boolean) {
+    setPlayback({ live })
   }
 
   return <div className="dash-video-wrap">
     <video ref={videoRef} className="dash-video" controls autoPlay muted playsInline aria-label="Live uploaded video" />
-    <div className="dash-player-foot"><span role="status">{message}</span><span>{parts} fragments received</span><button onClick={goLive} disabled={!parts}>Jump to latest</button></div>
+    <div className="dash-player-foot"><span role="status">{message}</span><span>{parts} fragments loaded</span><button onClick={() => startPlayback(false)} disabled={!parts}>Play from start</button><button onClick={() => startPlayback(true)} disabled={!parts}>Jump to latest</button></div>
   </div>
 }
