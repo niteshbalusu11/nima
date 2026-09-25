@@ -27,6 +27,7 @@ type api struct {
 	db           *sql.DB
 	store        objectStore
 	limiter      inviteLimiter
+	relayEnabled bool
 	faceDetector func(context.Context, string, string) ([]detectedFace, error)
 }
 type profile struct {
@@ -123,6 +124,20 @@ func (a *api) handler() http.Handler {
 	protected.HandleFunc("GET /me", a.me)
 	protected.HandleFunc("PATCH /me", a.updateMe)
 	protected.HandleFunc("POST /invites", a.createInvite)
+	protected.HandleFunc("POST /devices/challenge", a.deviceChallenge)
+	protected.HandleFunc("POST /devices/register", a.registerDevice)
+	protected.HandleFunc("GET /devices/current", a.currentDevice)
+	protected.HandleFunc("GET /devices/credential", a.nearbyCredential)
+	protected.HandleFunc("PUT /peer-approvals/{id}", a.syncNearbyPermission)
+	protected.HandleFunc("DELETE /devices/{id}", a.revokeDevice)
+	protected.HandleFunc("GET /peer-approvals", a.listPeerApprovals)
+	protected.HandleFunc("DELETE /peer-approvals/{id}", a.revokePeerApproval)
+	protected.HandleFunc("POST /relay-grants/redeem", a.redeemRelay)
+	protected.HandleFunc("POST /relay-grants/{id}/objects/reserve", a.reserveRelay)
+	protected.HandleFunc("POST /relay-grants/{id}/objects/ack", a.ackRelay)
+	protected.HandleFunc("POST /relay-grants/{id}/completion", a.completeRelay)
+	protected.HandleFunc("POST /relay-grants/{id}/status", a.relayStatus)
+	protected.HandleFunc("POST /captures/{id}/completion", a.completeOwner)
 	protected.HandleFunc("PUT /captures/{id}", a.createCapture)
 	protected.HandleFunc("POST /captures/{id}/objects/reserve", a.reserve)
 	protected.HandleFunc("POST /captures/{id}/objects/ack", a.ack)
@@ -320,8 +335,9 @@ func (a *api) owned(w http.ResponseWriter, r *http.Request) (string, bool) {
 }
 func (a *api) createCapture(w http.ResponseWriter, r *http.Request) {
 	var p struct {
-		Kind     string           `json:"kind"`
-		Location *captureLocation `json:"location"`
+		Kind       string             `json:"kind"`
+		Location   *captureLocation   `json:"location"`
+		Descriptor *signedMediaRecord `json:"descriptor"`
 	}
 	if !decode(w, r, &p) {
 		return
@@ -331,38 +347,91 @@ func (a *api) createCapture(w http.ResponseWriter, r *http.Request) {
 		failure(w, 400, "Invalid capture")
 		return
 	}
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	defer tx.Rollback()
+	var shared *verifiedMediaCapture
+	if p.Descriptor != nil {
+		var recorder device
+		err = tx.QueryRow(`SELECT d.id,d.account_id,d.signing_public_key,d.tls_public_key FROM devices d JOIN sessions s ON s.device_id=d.id JOIN accounts a ON a.id=d.account_id
+ WHERE s.hash=? AND s.account_id=? AND s.revoked=0 AND a.active=1 AND d.account_id=s.account_id AND d.revoked_at IS NULL`, sessionHash(r), account(r)).Scan(&recorder.ID, &recorder.AccountID, &recorder.SigningPublicKey, &recorder.TLSPublicKey)
+		if errors.Is(err, sql.ErrNoRows) {
+			mediaFailure(w, mediaAPIError{403, "device_unavailable", "Registered recorder device required"})
+			return
+		}
+		if err != nil {
+			mediaFailure(w, err)
+			return
+		}
+		capture, e := verifyMediaCapture(*p.Descriptor, recorder)
+		if e != nil || capture.Descriptor.CaptureID != id || capture.Descriptor.Kind != p.Kind || !capture.validAt(time.Now().Unix()) {
+			mediaFailure(w, mediaAPIError{400, "invalid_signature", "Invalid signed capture"})
+			return
+		}
+		shared = &capture
+	}
 	var latitude, longitude, accuracy, timestamp any
 	if p.Location != nil {
 		latitude, longitude = *p.Location.Latitude, *p.Location.Longitude
 		accuracy, timestamp = *p.Location.HorizontalAccuracyM, *p.Location.Timestamp
 	}
-	_, err := a.db.ExecContext(r.Context(), `INSERT INTO captures(id,account_id,kind,created_at,latitude,longitude,horizontal_accuracy_m,location_timestamp)
-		VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, id, account(r), p.Kind, time.Now().Unix(), latitude, longitude, accuracy, timestamp)
+	created := time.Now().Unix()
+	if shared != nil {
+		created = shared.Descriptor.CreatedAt
+	}
+	_, err = tx.Exec(`INSERT INTO captures(id,account_id,kind,created_at,latitude,longitude,horizontal_accuracy_m,location_timestamp)
+ VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, id, account(r), p.Kind, created, latitude, longitude, accuracy, timestamp)
 	if err != nil {
 		failure(w, 503, "Unavailable")
 		return
 	}
-	kind, ok := a.owned(w, r)
-	if !ok {
+	var owner, kind string
+	var deleted, ts sql.NullInt64
+	var lat, lon, acc sql.NullFloat64
+	var pending bool
+	err = tx.QueryRow(`SELECT account_id,kind,deleted_at,latitude,longitude,horizontal_accuracy_m,location_timestamp,owner_metadata_pending FROM captures WHERE id=?`, id).Scan(&owner, &kind, &deleted, &lat, &lon, &acc, &ts, &pending)
+	if err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	if owner != account(r) {
+		failure(w, 404, "Not found")
+		return
+	}
+	if deleted.Valid {
+		failure(w, 410, "Capture deleted")
 		return
 	}
 	if kind != p.Kind {
 		failure(w, 409, "Capture conflict")
 		return
 	}
-	if p.Location != nil {
-		var lat, lon, acc sql.NullFloat64
-		var ts sql.NullInt64
-		if err = a.db.QueryRowContext(r.Context(), "SELECT latitude,longitude,horizontal_accuracy_m,location_timestamp FROM captures WHERE id=?", id).Scan(&lat, &lon, &acc, &ts); err != nil {
+	if pending {
+		// Only the actual owner can fill or omit location, once, after relay-first creation.
+		_, err = tx.Exec(`UPDATE captures SET latitude=?,longitude=?,horizontal_accuracy_m=?,location_timestamp=?,owner_metadata_pending=0 WHERE id=?`, latitude, longitude, accuracy, timestamp, id)
+		if err != nil {
 			failure(w, 503, "Unavailable")
 			return
 		}
+	} else if p.Location != nil {
 		stored := locationFromDB(lat, lon, acc, ts)
-		if stored == nil || *stored.Latitude != *p.Location.Latitude || *stored.Longitude != *p.Location.Longitude ||
-			*stored.HorizontalAccuracyM != *p.Location.HorizontalAccuracyM || *stored.Timestamp != *p.Location.Timestamp {
+		if stored == nil || *stored.Latitude != *p.Location.Latitude || *stored.Longitude != *p.Location.Longitude || *stored.HorizontalAccuracyM != *p.Location.HorizontalAccuracyM || *stored.Timestamp != *p.Location.Timestamp {
 			failure(w, 409, "Capture conflict")
 			return
 		}
+	}
+	if shared != nil {
+		err = attachSharedCapture(tx, *shared)
+	}
+	if err == nil {
+		err = tx.Commit()
+	}
+	if err != nil {
+		mediaFailure(w, err)
+		return
 	}
 	jsonResponse(w, 200, map[string]bool{"ok": true})
 }
@@ -397,42 +466,9 @@ func (a *api) reserve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	// Serialize reservations with deletion, including signing the last upload URL.
-	var deleted sql.NullInt64
-	if err = tx.QueryRow("SELECT deleted_at FROM captures WHERE id=?", o.CaptureID).Scan(&deleted); err != nil {
-		failure(w, 503, "Unavailable")
-		return
-	}
-	if deleted.Valid {
-		failure(w, 410, "Capture deleted")
-		return
-	}
-	old, err := scanObject(tx.QueryRow("SELECT "+objectColumns+" FROM objects WHERE capture_id=? AND sequence=?", o.CaptureID, o.Sequence))
-	if err == nil {
-		if old.SHA256 != o.SHA256 || old.MD5 != o.MD5 || old.Size != o.Size || old.Kind != o.Kind || old.Duration != o.Duration || old.StartTime != o.StartTime {
-			failure(w, 409, "Object conflict")
-			return
-		}
-		o = old
-	} else if errors.Is(err, sql.ErrNoRows) {
-		var used int64
-		if err = tx.QueryRow("SELECT COALESCE(SUM(o.size),0) FROM objects o JOIN captures c ON c.id=o.capture_id WHERE c.account_id=? AND c.deleted_at IS NULL", account(r)).Scan(&used); err != nil {
-			failure(w, 503, "Unavailable")
-			return
-		}
-		if used+o.Size > accountQuota {
-			failure(w, 413, "Storage full")
-			return
-		}
-		o.Key = newID() + "/" + newID()
-		o.Acknowledged = false
-		_, err = tx.Exec("INSERT INTO objects("+objectColumns+") VALUES(?,?,?,?,?,?,?,?,?,0)", o.CaptureID, o.Sequence, o.Kind, o.Key, o.SHA256, o.MD5, o.Size, o.Duration, o.StartTime)
-		if err != nil {
-			failure(w, 503, "Unavailable")
-			return
-		}
-	} else {
-		failure(w, 503, "Unavailable")
+	o, err = reserveCanonical(tx, account(r), o)
+	if err != nil {
+		mediaFailure(w, err)
 		return
 	}
 	var signed signedUpload
@@ -494,8 +530,17 @@ func (a *api) finish(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.owned(w, r); !ok {
 		return
 	}
-	if _, err := a.db.ExecContext(r.Context(), "UPDATE captures SET finished=1 WHERE id=?", r.PathValue("id")); err != nil {
+	result, err := a.db.ExecContext(r.Context(), `UPDATE captures SET finished=1 WHERE id=? AND deleted_at IS NULL
+ AND NOT EXISTS(SELECT 1 FROM shared_captures s WHERE s.capture_id=captures.id)`, r.PathValue("id"))
+	if err != nil {
 		failure(w, 503, "Unavailable")
+		return
+	}
+	if count, err := result.RowsAffected(); err != nil || count == 0 {
+		if _, ok := a.owned(w, r); !ok {
+			return
+		}
+		mediaFailure(w, mediaConflict("Shared recordings require signed completion"))
 		return
 	}
 	jsonResponse(w, 200, map[string]bool{"ok": true})
@@ -712,5 +757,24 @@ func (a *api) captureDetail(w http.ResponseWriter, r *http.Request, kind string,
 			}
 		}
 	}
-	jsonResponse(w, 200, map[string]any{"id": r.PathValue("id"), "kind": kind, "finished": finished, "location": location, "objects": list})
+	response := map[string]any{"id": r.PathValue("id"), "kind": kind, "finished": finished, "location": location, "objects": list}
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	defer tx.Rollback()
+	shared, err := sharedStatus(tx, r.PathValue("id"))
+	if err == nil {
+		err = tx.Commit()
+	}
+	if err != nil {
+		mediaFailure(w, err)
+		return
+	}
+	if shared != nil {
+		response["recording_ending"], response["cloud_complete"] = shared.Ending, shared.Complete
+		response["finished"] = shared.Complete && shared.Ending == "stopped"
+	}
+	jsonResponse(w, 200, response)
 }

@@ -20,6 +20,13 @@ struct CaptureLocation: Codable, Equatable, Sendable {
     let timestamp: Int64
 }
 
+enum CaptureEnding: String, Codable, Sendable { case stopped, interrupted }
+struct CaptureTerminal: Codable, Sendable {
+    let ending: CaptureEnding
+    let objectCount: Int
+    let totalBytes: Int
+}
+
 struct QueuedObject: Codable, Sendable, Identifiable {
     let id: UUID
     let accountId: String
@@ -35,6 +42,8 @@ struct QueuedObject: Codable, Sendable, Identifiable {
     let createdAt: Date
     let location: CaptureLocation?
     var acknowledged: Bool
+    var terminal: CaptureTerminal? = nil
+    var imported: Bool? = nil
     var reservation: Data {
         get throws {
             struct Body: Encodable {
@@ -51,12 +60,14 @@ struct QueuedObject: Codable, Sendable, Identifiable {
 final class UploadQueue: @unchecked Sendable {
     private let lock = NSLock()
     private let root: URL
+    private let budget: MediaStorageBudget?
     private var items: [QueuedObject] = []
     private var bytes = 0
     private var deleted: Set<String> = []
     private var deletionFile: URL { root.appendingPathComponent(".deleted.json") }
     static let limit = 3 * 1024 * 1024 * 1024
-    init(root: URL? = nil) throws {
+    init(root: URL? = nil, budget: MediaStorageBudget? = nil) throws {
+        self.budget = budget
         self.root = try root ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                         appropriateFor: nil, create: true).appendingPathComponent("PendingMedia")
         try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
@@ -80,6 +91,7 @@ final class UploadQueue: @unchecked Sendable {
             items.append(item); bytes += item.size
         }
         items.sort { $0.createdAt < $1.createdAt }
+        try budget?.reconcile(self.root)
     }
     func checkSpace() throws {
         lock.lock(); defer { lock.unlock() }
@@ -93,17 +105,22 @@ final class UploadQueue: @unchecked Sendable {
     }
     func enqueue(_ data: Data, accountId: String, captureId: String, captureKind: String,
                  sequence: Int, kind: String, duration: Double = 0, startTime: Double = 0,
-                 location: CaptureLocation? = nil) throws {
+                 location: CaptureLocation? = nil, imported: Bool = false) throws {
         lock.lock(); defer { lock.unlock() }
         guard !deleted.contains("\(accountId)/\(captureId)") else { throw APIError(status: 410, message: "Capture deleted") }
+        guard !items.contains(where: { $0.accountId == accountId && $0.captureId == captureId && $0.terminal != nil }) else {
+            throw APIError(status: 409, message: "Recording already ended")
+        }
         try checkSpaceLocked(additional: data.count)
+        let reservation = try budget?.reserve(data.count + 8192, area: .owner)
         let item = QueuedObject(id: UUID(), accountId: accountId, captureId: captureId, captureKind: captureKind,
                                 sequence: sequence, kind: kind,
                                 sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
                                 md5: Data(Insecure.MD5.hash(data: data)).base64EncodedString(), size: data.count,
                                 duration: duration.isFinite ? duration : 0, startTime: startTime.isFinite ? max(0, startTime) : 0,
-                                createdAt: Date(), location: location, acknowledged: false)
+                                createdAt: Date(), location: location, acknowledged: false, imported: imported ? true : nil)
         let staging = root.appendingPathComponent(".tmp-\(item.id.uuidString)")
+        defer { try? budget?.finish(reservation, paths: [staging, folder(item)]) }
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         do {
             try data.write(to: staging.appendingPathComponent("media"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -125,6 +142,29 @@ final class UploadQueue: @unchecked Sendable {
         return items.filter { $0.accountId == accountId && !$0.acknowledged }.count
     }
     func file(_ item: QueuedObject) -> URL { folder(item).appendingPathComponent("media") }
+    func retainedObjects(accountId: String, captureId: String) -> [QueuedObject] {
+        lock.lock(); defer { lock.unlock() }
+        return items.filter { $0.accountId == accountId && $0.captureId == captureId }.sorted { $0.sequence < $1.sequence }
+    }
+    func finishCapture(accountId: String, captureId: String, ending: CaptureEnding, expectedObjects: Int) throws {
+        lock.lock(); defer { lock.unlock() }
+        let parts = items.filter { $0.accountId == accountId && $0.captureId == captureId }.sorted { $0.sequence < $1.sequence }
+        guard !deleted.contains("\(accountId)/\(captureId)"), let last = parts.last, parts.count == expectedObjects,
+              parts.enumerated().allSatisfy({ $0.offset == $0.element.sequence }),
+              let index = items.firstIndex(where: { $0.id == last.id }) else { throw APIError(status: 0, message: "Recording ending is unknown") }
+        let terminal = CaptureTerminal(ending: ending, objectCount: parts.count, totalBytes: parts.reduce(0) { $0 + $1.size })
+        if let old = last.terminal {
+            guard old.ending == ending, old.objectCount == terminal.objectCount, old.totalBytes == terminal.totalBytes else {
+                throw APIError(status: 0, message: "Conflicting recording ending")
+            }
+            return
+        }
+        var updated = last; updated.terminal = terminal
+        let reservation = try budget?.reserve(8192, area: .owner)
+        defer { try? budget?.finish(reservation, paths: [folder(last)]) }
+        try JSONEncoder().encode(updated).write(to: folder(last).appendingPathComponent("item.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        items[index] = updated
+    }
     func captures(accountId: String) -> [LocalCapture] {
         lock.lock(); defer { lock.unlock() }
         return Dictionary(grouping: items.filter { $0.accountId == accountId }, by: \.captureId).values.map { group in
@@ -153,6 +193,7 @@ final class UploadQueue: @unchecked Sendable {
         updated.insert("\(accountId)/\(captureId)")
         // Commit intent before touching any originals; restart cannot resume a deleted upload.
         try JSONEncoder().encode(updated).write(to: deletionFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        defer { try? budget?.reconcile(deletionFile) }
         deleted = updated
         let removed = items.filter { $0.accountId == accountId && $0.captureId == captureId }
         items.removeAll { $0.accountId == accountId && $0.captureId == captureId }
@@ -162,6 +203,7 @@ final class UploadQueue: @unchecked Sendable {
     private func discard(_ item: QueuedObject) throws {
         // An interrupted filesystem removal is swept by the existing staging cleanup.
         let staging = root.appendingPathComponent(".tmp-\(item.id.uuidString)")
+        defer { try? budget?.finish(nil, paths: [folder(item), staging]) }
         try FileManager.default.moveItem(at: folder(item), to: staging)
         try FileManager.default.removeItem(at: staging)
     }
@@ -198,7 +240,8 @@ struct UploadWorker: Sendable {
             guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
             // A repeated conditional PUT is expected to return 412; /ack verifies the original bytes.
             guard (200..<300).contains(http.statusCode) || http.statusCode == 412 else {
-                throw APIError(status: http.statusCode == 401 ? 503 : http.statusCode, message: "Upload paused")
+                // Another contributor may still be committing a conditional write; retry a storage 409.
+                throw APIError(status: [401, 409].contains(http.statusCode) ? 503 : http.statusCode, message: "Upload paused")
             }
             struct Ack: Encodable { let sequence: Int }
             let _: OK = try await api.request("POST", "captures/\(item.captureId)/objects/ack", body: API.encode(Ack(sequence: item.sequence)))

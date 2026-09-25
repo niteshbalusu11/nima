@@ -26,6 +26,7 @@ struct QueueProbe {
         let original = try Data(contentsOf: restored.file(initialization))
         precondition(original == Data("init".utf8))
         try restored.acknowledge(initialization)
+        try restored.finishCapture(accountId: "one", captureId: "video", ending: .stopped, expectedObjects: 2)
         precondition(!restored.captures(accountId: "one")[0].uploaded)
         let reopened = try UploadQueue(root: root)
         let fragment = reopened.next(accountId: "one", captureKind: "video")!
@@ -36,11 +37,17 @@ struct QueueProbe {
         precondition(parts == [reopened.file(initialization), reopened.file(fragment)])
         precondition((try? reopened.videoParts(accountId: "two", captureId: "video")) == nil)
         try reopened.acknowledge(fragment)
+        let finished = try UploadQueue(root: root).retainedObjects(accountId: "one", captureId: "video")
+        precondition(finished.last?.terminal?.ending == .stopped)
         let uploaded = try UploadQueue(root: root).captures(accountId: "one")
         precondition(uploaded.count == 1 && uploaded[0].uploaded)
         try reopened.enqueue(Data("init".utf8), accountId: "one", captureId: "gap", captureKind: "video", sequence: 0, kind: "init")
         try reopened.enqueue(Data("fragment".utf8), accountId: "one", captureId: "gap", captureKind: "video", sequence: 2, kind: "media")
         precondition((try? reopened.videoParts(accountId: "one", captureId: "gap")) == nil)
+        do {
+            try reopened.finishCapture(accountId: "one", captureId: "gap", ending: .stopped, expectedObjects: 2)
+            preconditionFailure("gapped recording got a terminal record")
+        } catch {}
         precondition(reopened.captures(accountId: "one").first?.id == "gap")
         precondition(reopened.captures(accountId: "one").first?.playable == false)
         try reopened.enqueue(Data("init".utf8), accountId: "one", captureId: "empty", captureKind: "video", sequence: 0, kind: "init")

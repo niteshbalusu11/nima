@@ -7,6 +7,21 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A01D842B7B46ED112BD0002C /* NearbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0002D /* NearbyView.swift */; };
+		A01D842B7B46ED112BD0002A /* LivePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0002B /* LivePlayback.swift */; };
+		A01D842B7B46ED112BD00028 /* NearbySharing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00029 /* NearbySharing.swift */; };
+		A01D842B7B46ED112BD00024 /* NearbyTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00025 /* NearbyTransfer.swift */; };
+		A01D842B7B46ED112BD00022 /* NearbyChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00023 /* NearbyChannel.swift */; };
+		A01D842B7B46ED112BD00020 /* RelayUploadWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00021 /* RelayUploadWorker.swift */; };
+		A01D842B7B46ED112BD0001E /* UploadSlots.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0001F /* UploadSlots.swift */; };
+		A01D842B7B46ED112BD0001C /* MediaStorageBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0001D /* MediaStorageBudget.swift */; };
+		A01D842B7B46ED112BD0001A /* OwnerMediaRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0001B /* OwnerMediaRecords.swift */; };
+		A01D842B7B46ED112BD00018 /* ReceivedMediaStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00019 /* ReceivedMediaStore.swift */; };
+		A01D842B7B46ED112BD00016 /* MediaRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00017 /* MediaRecords.swift */; };
+		A01D842B7B46ED112BD00013 /* X509 in Frameworks */ = {isa = PBXBuildFile; productRef = A01D842B7B46ED112BD00014 /* X509 */; };
+		A01D842B7B46ED112BD00011 /* PeerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00012 /* PeerStore.swift */; };
+		A01D842B7B46ED112BD0000F /* NearbySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00010 /* NearbySettingsView.swift */; };
+		A01D842B7B46ED112BD0000D /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0000E /* DeviceIdentity.swift */; };
 		566267AA891D1842197B339A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA54C291C542BB61A2311C17 /* ContentView.swift */; };
 		746D9B184A5B8B7C4AC2A103 /* LiquidGlassControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 746D9B184A5B8B7C4AC2A104 /* LiquidGlassControls.swift */; };
 		6506EFC50074C363C58F7C7A /* UploadVideoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B22A580CC7BE5D5BD5643497 /* UploadVideoApp.swift */; };
@@ -23,9 +38,26 @@
 		A01D842B7B46ED112BD00003 /* InviteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00004 /* InviteView.swift */; };
 		A01D842B7B46ED112BD00005 /* CaptureLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00006 /* CaptureLibrary.swift */; };
 		A01D842B7B46ED112BD00007 /* GalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00008 /* GalleryView.swift */; };
+		A02D842B7B46ED112BD00000 /* NearbyPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03D842B7B46ED112BD00000; };
+		A02D842B7B46ED112BD00001 /* NearbyPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03D842B7B46ED112BD00001; };
+		A02D842B7B46ED112BD00002 /* WiFiAwareRadio.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03D842B7B46ED112BD00002; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A01D842B7B46ED112BD0002D /* NearbyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyView.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD0002B /* LivePlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePlayback.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00029 /* NearbySharing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbySharing.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00025 /* NearbyTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyTransfer.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00023 /* NearbyChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyChannel.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00021 /* RelayUploadWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayUploadWorker.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD0001F /* UploadSlots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadSlots.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD0001D /* MediaStorageBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaStorageBudget.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD0001B /* OwnerMediaRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnerMediaRecords.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00019 /* ReceivedMediaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedMediaStore.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00017 /* MediaRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRecords.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00012 /* PeerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerStore.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00010 /* NearbySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbySettingsView.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD0000E /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
 		430C07E962E2702AE7F52144 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		A27B83E9200FD08DD8B40B74 /* UploadVideo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = UploadVideo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B22A580CC7BE5D5BD5643497 /* UploadVideoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UploadVideoApp.swift; sourceTree = "<group>"; };
@@ -45,6 +77,9 @@
 		A01D842B7B46ED112BD00004 /* InviteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteView.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD00006 /* CaptureLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureLibrary.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD00008 /* GalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryView.swift; sourceTree = "<group>"; };
+		A03D842B7B46ED112BD00000 /* NearbyPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyPermission.swift; sourceTree = "<group>"; };
+		A03D842B7B46ED112BD00001 /* NearbyPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyPairing.swift; sourceTree = "<group>"; };
+		A03D842B7B46ED112BD00002 /* WiFiAwareRadio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiAwareRadio.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +88,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				88D1C469656CEB06BCA9A6CD /* Foundation.framework in Frameworks */,
+				A01D842B7B46ED112BD00013 /* X509 in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -101,6 +137,23 @@
 				A01D842B7B46ED112BD00002 /* AuthView.swift */,
 				A01D842B7B46ED112BD00004 /* InviteView.swift */,
 				A01D842B7B46ED112BD00008 /* GalleryView.swift */,
+				A01D842B7B46ED112BD00017 /* MediaRecords.swift */,
+				A01D842B7B46ED112BD00019 /* ReceivedMediaStore.swift */,
+				A01D842B7B46ED112BD0001D /* MediaStorageBudget.swift */,
+				A01D842B7B46ED112BD0001F /* UploadSlots.swift */,
+				A01D842B7B46ED112BD00021 /* RelayUploadWorker.swift */,
+				A01D842B7B46ED112BD0002D /* NearbyView.swift */,
+				A01D842B7B46ED112BD0002B /* LivePlayback.swift */,
+				A01D842B7B46ED112BD00029 /* NearbySharing.swift */,
+				A01D842B7B46ED112BD00025 /* NearbyTransfer.swift */,
+				A01D842B7B46ED112BD00023 /* NearbyChannel.swift */,
+				A01D842B7B46ED112BD0001B /* OwnerMediaRecords.swift */,
+				A01D842B7B46ED112BD00012 /* PeerStore.swift */,
+				A03D842B7B46ED112BD00002 /* WiFiAwareRadio.swift */,
+				A03D842B7B46ED112BD00001 /* NearbyPairing.swift */,
+				A03D842B7B46ED112BD00000 /* NearbyPermission.swift */,
+				A01D842B7B46ED112BD0000E /* DeviceIdentity.swift */,
+				A01D842B7B46ED112BD00010 /* NearbySettingsView.swift */,
 				A01D842B7B46ED112BD00006 /* CaptureLibrary.swift */,
 				114BCEAF4FCCB6BE96E7EB3A /* PhotoLibrary.swift */,
 				D63B6200560377DA67891AAB /* Assets.xcassets */,
@@ -131,6 +184,7 @@
 			dependencies = (
 			);
 			name = UploadVideo;
+			packageProductDependencies = (A01D842B7B46ED112BD00014 /* X509 */);
 			productName = UploadVideo;
 			productReference = A27B83E9200FD08DD8B40B74 /* UploadVideo.app */;
 			productType = "com.apple.product-type.application";
@@ -156,6 +210,7 @@
 			minimizedProjectReferenceProxies = 0;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9A45CAF06B2FA9578B8D4C31 /* Products */;
+			packageReferences = (A01D842B7B46ED112BD00015 /* swift-certificates */);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -181,6 +236,23 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A01D842B7B46ED112BD00016 /* MediaRecords.swift in Sources */,
+				A01D842B7B46ED112BD00018 /* ReceivedMediaStore.swift in Sources */,
+				A01D842B7B46ED112BD0001C /* MediaStorageBudget.swift in Sources */,
+				A01D842B7B46ED112BD0001E /* UploadSlots.swift in Sources */,
+				A01D842B7B46ED112BD00020 /* RelayUploadWorker.swift in Sources */,
+				A01D842B7B46ED112BD0002C /* NearbyView.swift in Sources */,
+				A01D842B7B46ED112BD0002A /* LivePlayback.swift in Sources */,
+				A01D842B7B46ED112BD00028 /* NearbySharing.swift in Sources */,
+				A01D842B7B46ED112BD00024 /* NearbyTransfer.swift in Sources */,
+				A01D842B7B46ED112BD00022 /* NearbyChannel.swift in Sources */,
+				A01D842B7B46ED112BD0001A /* OwnerMediaRecords.swift in Sources */,
+				A01D842B7B46ED112BD00011 /* PeerStore.swift in Sources */,
+				A02D842B7B46ED112BD00002 /* WiFiAwareRadio.swift in Sources */,
+				A02D842B7B46ED112BD00001 /* NearbyPairing.swift in Sources */,
+				A02D842B7B46ED112BD00000 /* NearbyPermission.swift in Sources */,
+				A01D842B7B46ED112BD0000D /* DeviceIdentity.swift in Sources */,
+				A01D842B7B46ED112BD0000F /* NearbySettingsView.swift in Sources */,
 				6506EFC50074C363C58F7C7A /* UploadVideoApp.swift in Sources */,
 				566267AA891D1842197B339A /* ContentView.swift in Sources */,
 				746D9B184A5B8B7C4AC2A103 /* LiquidGlassControls.swift in Sources */,
@@ -198,6 +270,22 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A01D842B7B46ED112BD00015 /* swift-certificates */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-certificates.git";
+			requirement = { kind = exactVersion; version = 1.21.0; };
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A01D842B7B46ED112BD00014 /* X509 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A01D842B7B46ED112BD00015 /* swift-certificates */;
+			productName = X509;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		2594480AD600B32794866259 /* Release */ = {
@@ -261,6 +349,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = UploadVideo/Configuration/Nearby.entitlements;
 				DEVELOPMENT_TEAM = GNQ3HY2357;
 				GENERATE_INFOPLIST_FILE = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -349,6 +438,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = UploadVideo/Configuration/Nearby.entitlements;
 				DEVELOPMENT_TEAM = T383T7Z432;
 				GENERATE_INFOPLIST_FILE = YES;
 				CURRENT_PROJECT_VERSION = 1;

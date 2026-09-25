@@ -70,7 +70,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
                         let activeSession = observingMulti ? self.multiSession : self.session
                         if name == AVCaptureSession.wasInterruptedNotification && !activeSession.isInterrupted { return }
                         self.needsRecovery = true
-                        self.finishRecording()
+                        self.finishRecording(interrupted: true)
                         self.onError("Camera interrupted")
                     }
                 })
@@ -361,14 +361,18 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             enableAudio(); recordingId = UUID().uuidString.lowercased(); recordingLocation = location
         }
     }
-    func stopRecording() { work.async { [self] in finishRecording() } }
-    private func finishRecording() {
+    func stopRecording(interrupted: Bool = false) { work.async { [self] in finishRecording(interrupted: interrupted) } }
+    private func finishRecording(interrupted: Bool = false) {
         guard let captureId = recordingId, let owner = accountId else { return }
         let finishing = writer
         recordingId = nil; recordingLocation = nil; writer = nil
         if let finishing {
             finishing.finish { [self, finishing] success in
                 _ = finishing
+                // Failure to persist terminal intent leaves an unknown ending;
+                // it must not stop ordinary uploads of the committed originals.
+                try? uploadQueue.finishCapture(accountId: owner, captureId: captureId,
+                    ending: success && !interrupted ? .stopped : .interrupted, expectedObjects: finishing.emittedObjectCount)
                 if !success { onError("Recording interrupted") }
                 onRecordingEnded()
                 if success {
@@ -382,7 +386,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     }
     func suspend() {
         work.async { [self] in
-            finishRecording()
+            finishRecording(interrupted: true)
             if session.isRunning { session.stopRunning() }
             if multiSession.isRunning { multiSession.stopRunning() }
             latestFrontFrame = nil; latestCombinedFrame = nil
@@ -424,7 +428,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         do {
             try uploadQueue.enqueue(data, accountId: owner, captureId: UUID().uuidString.lowercased(),
                                     captureKind: "photo", sequence: 0, kind: "photo", location: location)
-        } catch { onError("Could not save photo"); finishRecording() }
+        } catch { onError("Could not save photo"); finishRecording(interrupted: true) }
         Task {
             do { try await PhotoLibrary.savePhoto(data) }
             catch { onError(PhotoLibrary.canSave ? "Could not save photo to Photos" : "Photos access off") }
@@ -463,12 +467,12 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
                                                 location: location)
                         try uploadQueue.checkSpace()
                     } catch {
-                        onError("Storage full"); stopRecording()
+                        onError("Storage full"); stopRecording(interrupted: true)
                     }
                 }
             }
             try writer?.append(sampleBuffer, isVideo: isVideo)
-        } catch { onError("Recording interrupted"); finishRecording() }
+        } catch { onError("Recording interrupted"); finishRecording(interrupted: true) }
     }
     func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
         guard accountId == nil else { return }
