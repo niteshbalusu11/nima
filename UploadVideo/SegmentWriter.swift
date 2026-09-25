@@ -78,6 +78,10 @@ final class SegmentWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendable 
         video.markAsFinished(); audio?.markAsFinished()
         writer.finishWriting { [self] in completion(writer.status == .completed) }
     }
+    var emittedObjectCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return sequence
+    }
     func cancel() { writer.cancelWriting() }
     func assetWriter(_ writer: AVAssetWriter, didOutputSegmentData segmentData: Data,
                      segmentType: AVAssetSegmentType, segmentReport: AVAssetSegmentReport?) {
@@ -105,7 +109,7 @@ private final class ImportSegmentSink: @unchecked Sendable {
         guard failure == nil else { return }
         do {
             try queue.enqueue(data, accountId: accountId, captureId: captureId, captureKind: "video",
-                              sequence: sequence, kind: kind, duration: duration, startTime: startTime)
+                              sequence: sequence, kind: kind, duration: duration, startTime: startTime, imported: true)
         } catch { failure = error }
     }
 

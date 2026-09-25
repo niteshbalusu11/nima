@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var videoMode = true
     @State private var showingProfile = false
     @State private var showingGallery = false
+    @State private var showingNearby = false
     @State private var shutterClosed = false
     @State private var statusMessage: String?
     @State private var statusMessageForLocation = false
@@ -18,14 +19,19 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .task { await model.activate() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in model.deactivate() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+            if scenePhase == .active { Task { await model.activate() } }
+        }
         .onChange(of: scenePhase) { _, phase in
             // Permission dialogs temporarily make the scene inactive; only backgrounding stops capture.
             if phase == .active { Task { await model.activate() } } else if phase == .background { model.deactivate() }
         }
         .onChange(of: model.session?.token) { _, token in
-            if token == nil { showingProfile = false; showingGallery = false }
+            if token == nil { showingProfile = false; showingGallery = false; showingNearby = false }
         }
         .sheet(isPresented: $showingProfile) { ProfileView(model: model) }
+        .sheet(isPresented: $showingNearby) { NearbyView(model: model) }
         .sheet(isPresented: $showingGallery) { GalleryView(model: model) }
         .onChange(of: showingGallery) { _, value in Task { await model.reviewCaptures(value) } }
         .onChange(of: uploadStatusText) { _, text in showStatusMessage(text) }
@@ -60,6 +66,10 @@ struct ContentView: View {
                         uploadStatus
                         locationToggle
                         Spacer()
+                        Button { showingNearby = true } label: {
+                            Image(systemName: "antenna.radiowaves.left.and.right")
+                                .font(.title2).frame(width: 48, height: 48).liquidGlassCircle()
+                        }.accessibilityLabel("Nearby sharing")
                     }
                     Text(statusMessage ?? "")
                         .font(.subheadline.weight(.semibold))
@@ -356,6 +366,9 @@ private struct ProfileView: View {
                         NavigationLink("Invite person") { InviteView(api: api) }
                     }
                 }.disabled(!loaded || saving || model.managingCapture)
+                Section {
+                    NavigationLink("Nearby people") { NearbySettingsView(model: model) }
+                }
                 Section {
                     Button("Log Out", role: .destructive) { confirmingLogout = true }
                         .liquidGlassButton()

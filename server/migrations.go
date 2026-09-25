@@ -54,6 +54,46 @@ CREATE TABLE face_groups (
  sightings INTEGER NOT NULL DEFAULT 1);
 CREATE INDEX face_groups_capture ON face_groups(capture_id, first_seen_ms);
 `,
+	`
+CREATE TABLE devices (
+ id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
+ signing_public_key TEXT NOT NULL UNIQUE, tls_public_key TEXT NOT NULL UNIQUE,
+ created_at INTEGER NOT NULL, revoked_at INTEGER);
+CREATE INDEX devices_account ON devices(account_id);
+ALTER TABLE sessions ADD COLUMN device_id TEXT REFERENCES devices(id);
+CREATE TABLE device_challenges (
+ session_hash TEXT PRIMARY KEY REFERENCES sessions(hash), nonce TEXT NOT NULL,
+ signing_public_key TEXT NOT NULL, tls_public_key TEXT NOT NULL, expires_at INTEGER NOT NULL);
+CREATE TABLE peer_approvals (
+ id TEXT PRIMARY KEY, sender_device_id TEXT NOT NULL REFERENCES devices(id),
+ recipient_device_id TEXT NOT NULL REFERENCES devices(id), created_at INTEGER NOT NULL,
+ revoked_at INTEGER, CHECK(sender_device_id != recipient_device_id));
+CREATE UNIQUE INDEX peer_approvals_active ON peer_approvals(sender_device_id,recipient_device_id) WHERE revoked_at IS NULL;
+CREATE INDEX peer_approvals_recipient ON peer_approvals(recipient_device_id);
+`,
+	`
+ALTER TABLE captures ADD COLUMN owner_metadata_pending INTEGER NOT NULL DEFAULT 0 CHECK(owner_metadata_pending IN (0,1));
+CREATE TABLE shared_captures (
+ capture_id TEXT PRIMARY KEY REFERENCES captures(id), recorder_device_id TEXT NOT NULL REFERENCES devices(id),
+ descriptor_payload TEXT NOT NULL, descriptor_signature TEXT NOT NULL,
+ completion_payload TEXT, completion_signature TEXT);
+CREATE TABLE relay_grants (
+ id TEXT PRIMARY KEY, capture_id TEXT NOT NULL REFERENCES shared_captures(capture_id),
+ approval_id TEXT NOT NULL REFERENCES peer_approvals(id),
+ payload TEXT NOT NULL, signature TEXT NOT NULL);
+CREATE INDEX relay_grants_capture ON relay_grants(capture_id);
+CREATE TABLE shared_object_records (
+ capture_id TEXT NOT NULL, sequence INTEGER NOT NULL, payload TEXT NOT NULL, signature TEXT NOT NULL,
+ PRIMARY KEY(capture_id,sequence),
+ FOREIGN KEY(capture_id,sequence) REFERENCES objects(capture_id,sequence) ON DELETE CASCADE);
+CREATE TABLE relay_grant_objects (
+ grant_id TEXT NOT NULL REFERENCES relay_grants(id), capture_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+ PRIMARY KEY(grant_id,sequence),
+ FOREIGN KEY(capture_id,sequence) REFERENCES objects(capture_id,sequence) ON DELETE CASCADE);
+`,
+	`
+CREATE TABLE nearby_authority (id INTEGER PRIMARY KEY CHECK(id=1), seed BLOB NOT NULL CHECK(length(seed)=32));
+`,
 }
 
 // Run before serving requests. The write lock also serializes startup with CLI commands.

@@ -1,4 +1,5 @@
 import SwiftUI
+import WiFiAware
 import AVFoundation
 @preconcurrency import CoreLocation
 
@@ -22,21 +23,27 @@ final class AppModel: ObservableObject {
     @Published private(set) var locationEnabled = UserDefaults.standard.object(forKey: "locationEnabled") as? Bool ?? true
     @Published var captures: [LocalCapture] = []
     @Published var managingCapture = false
+    @Published private(set) var nearby: NearbySharing?
     private(set) var library = CaptureLibrary()
     private(set) var camera: Camera?
     private let location = CaptureLocationProvider()
     private var queue: UploadQueue?
+    private var mediaBudget: MediaStorageBudget?
+    private let uploadSlots = UploadSlots()
     private var workers: [Task<Void, Never>] = []
     private var statusTask: Task<Void, Never>?
     private var uploadErrors: [String: String] = [:]
     private var active = false
     private var reviewing = false
+    private var peers: PeerStore?
     private var lastInviteAttempt = Date.distantPast
     var api: API { API(baseURL: API.configuredURL, token: session?.token) }
     init() {
         session = SessionKeychain.load()
         do {
-            let queue = try UploadQueue(); self.queue = queue
+            let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            let budget = try MediaStorageBudget(root: root); mediaBudget = budget
+            let queue = try UploadQueue(budget: budget); self.queue = queue
             camera = Camera(queue: queue, onError: { [weak self] message in
                 Task { @MainActor in
                     guard let self, self.active, self.session != nil || self.scanning else { return }
@@ -63,6 +70,7 @@ final class AppModel: ObservableObject {
         active = true
         if session != nil || scanning { await startCamera() }
         startUploads()
+        if session?.deviceId != nil { try? configureNearby() }
         #if DEBUG && targetEnvironment(simulator)
         if session == nil, let path = ProcessInfo.processInfo.environment["INVITE_FILE"],
            let code = try? String(contentsOfFile: path, encoding: .utf8) {
@@ -88,6 +96,47 @@ final class AppModel: ObservableObject {
         location.stop()
         camera?.suspend()
         stopUploads()
+        nearby?.suspend()
+    }
+    func peerStore() throws -> PeerStore {
+        guard let current = session else { throw APIError(status: 401, message: "Sign in first") }
+        if let peers, peers.sessionToken == current.token, peers.device.id == current.deviceId, peers.baseURL == api.baseURL { return peers }
+        let identity = try DeviceIdentity.loadOrCreate(for: current, at: api.baseURL)
+        let device = try identity.registeredDevice(for: current)
+        let store = try PeerStore(api: api, session: current, device: device)
+        peers = store
+        return store
+    }
+    func registerSharingDevice() async throws {
+        guard let current = session else { throw APIError(status: 401, message: "Sign in first") }
+        let identity = try DeviceIdentity.loadOrCreate(for: current, at: api.baseURL)
+        let device = try await identity.register(using: api, session: current)
+        guard var updated = session, updated.token == current.token else { throw CancellationError() }
+        updated.deviceId = device.id
+        try SessionKeychain.save(updated)
+        session = updated
+        try configureNearby()
+    }
+    func configureNearby() throws {
+        guard let current = session, let queue, let mediaBudget else { return }
+        if nearby?.peers.sessionToken == current.token, nearby?.peers.device.id == current.deviceId {
+            if active { nearby?.activate() }; return
+        }
+        nearby?.suspend()
+        let identity = try DeviceIdentity.loadOrCreate(for: current, at: api.baseURL)
+        nearby = try NearbySharing(api: api, queue: queue, peers: peerStore(), identity: identity, budget: mediaBudget, slots: uploadSlots)
+        if active { nearby?.activate() }
+    }
+    @available(iOS 26.0, *)
+    func joinNearby(_ device: WAPairedDevice) throws {
+        guard !recording, !stopping, !preparingCapture, let nearby else { throw APIError(status: 0, message: "Finish recording first") }
+        try nearby.join(device)
+        location.stop(); camera?.suspend()
+    }
+    func stopReceivingNearby() async throws {
+        guard !recording, !stopping, !preparingCapture else { throw APIError(status: 0, message: "Finish recording first") }
+        nearby?.stopReceiving()
+        if active { await startCamera() }
     }
     func startScanning() async {
         scanning = true; message = nil
@@ -99,7 +148,7 @@ final class AppModel: ObservableObject {
     }
     private func startCamera() async {
         let granted = await AVCaptureDevice.requestAccess(for: .video)
-        guard active, !managingCapture, !reviewing, session != nil || scanning else { return }
+        guard active, !managingCapture, !reviewing, nearby?.receiving == nil, session != nil || scanning else { return }
         cameraDenied = !granted
         if granted {
             if session != nil && locationEnabled { location.start() }
@@ -145,7 +194,7 @@ final class AppModel: ObservableObject {
         catch { message = "Offline" }
     }
     func shutter(video: Bool) async {
-        guard !managingCapture, !queueFailure, !captureBlocked, session != nil, !stopping, !preparingCapture, !switchingCamera else { return }
+        guard !managingCapture, nearby?.receiving == nil, !queueFailure, !captureBlocked, session != nil, !stopping, !preparingCapture, !switchingCamera else { return }
         message = nil
         if recording { stopping = true; camera?.stopRecording(); return }
         preparingCapture = true; defer { preparingCapture = false }
@@ -157,12 +206,12 @@ final class AppModel: ObservableObject {
             recordingStarted = Date(); recording = true; camera?.record(location: locationEnabled ? location.current : nil)
         } else { camera?.takePhoto(location: locationEnabled ? location.current : nil) }
     }
-    func takePhoto() { if !managingCapture && !captureBlocked { camera?.takePhoto(location: locationEnabled ? location.current : nil) } }
+    func takePhoto() { if !managingCapture && !captureBlocked && nearby?.receiving == nil { camera?.takePhoto(location: locationEnabled ? location.current : nil) } }
     func importPhoto(_ original: Data) async throws {
         guard let session, let queue, !queueFailure else { throw APIError(status: 0, message: "Could not import photo") }
         let jpeg = try await Task.detached(priority: .utility) { try ImportedPhotoEncoder.jpeg(original) }.value
         try queue.enqueue(jpeg, accountId: session.accountId, captureId: UUID().uuidString.lowercased(),
-                          captureKind: "photo", sequence: 0, kind: "photo")
+                          captureKind: "photo", sequence: 0, kind: "photo", imported: true)
         refreshCaptures()
     }
     func importVideo(_ url: URL) async throws {
@@ -184,7 +233,8 @@ final class AppModel: ObservableObject {
         // If Keychain fails, keep the session visible so logout is never falsely reported.
         try SessionKeychain.clear()
         managingCapture = true
-        let pending = stopUploads()
+        let pending = stopUploads() + (nearby?.suspend() ?? [])
+        nearby = nil; peers = nil
         session = nil; captures = []; scanning = false; reviewing = false
         cameraMode = .back
         message = nil; captureBlocked = false; uploadErrors.removeAll()
@@ -201,8 +251,8 @@ final class AppModel: ObservableObject {
             throw APIError(status: 0, message: "Try again")
         }
         managingCapture = true
-        let pending = stopUploads()
-        defer { managingCapture = false; refreshCaptures(); startUploads() }
+        let pending = stopUploads() + (nearby?.suspend() ?? [])
+        defer { managingCapture = false; refreshCaptures(); startUploads(); if active { nearby?.activate() } }
         for task in pending { await task.value }
         do {
             let _: OK = try await api.request("DELETE", "captures/\(id)")
@@ -212,6 +262,7 @@ final class AppModel: ObservableObject {
         }
         // After the server accepts deletion, no retries may send this capture again.
         try queue.remove(accountId: current.accountId, captureId: id)
+        try await nearby?.forgetOwnedCapture(id)
         try await library.remove(accountId: current.accountId, captureId: id)
         uploadErrors.removeAll(); captureBlocked = false
         if ["Storage full", "Offline", "Upload paused"].contains(message ?? "") { message = nil }
@@ -221,7 +272,8 @@ final class AppModel: ObservableObject {
         if captures != updated { captures = updated }
     }
     private func invalidateSession() {
-        camera?.stopRecording(); session = nil; try? SessionKeychain.clear(); stopUploads()
+        nearby?.suspend(); nearby = nil; peers = nil
+        camera?.stopRecording(interrupted: true); session = nil; try? SessionKeychain.clear(); stopUploads()
         location.stop()
         scanning = false; cameraMode = .back; camera?.suspend(); message = "Enter invite"
         captures = []
@@ -236,6 +288,7 @@ final class AppModel: ObservableObject {
     private func startUploads() {
         guard active, !managingCapture, workers.isEmpty, let session, let queue else { return }
         let worker = UploadWorker(api: api, queue: queue, accountId: session.accountId)
+        let slots = uploadSlots
         for kind in ["video", "photo"] {
             workers.append(Task { [weak self] in
                 var failures = 0
@@ -243,7 +296,7 @@ final class AppModel: ObservableObject {
                     guard let self else { return }
                     if let item = queue.next(accountId: session.accountId, captureKind: kind) {
                         do {
-                            try await worker.send(item)
+                            try await slots.run(owner: true) { try await worker.send(item) }
                             try Task.checkCancellation()
                             failures = 0; self.uploadErrors[kind] = nil
                             self.captureBlocked = self.uploadErrors.values.contains { $0 != "Offline" }
@@ -255,11 +308,15 @@ final class AppModel: ObservableObject {
                         catch let error as APIError where error.status == 410 {
                             if Task.isCancelled { return }
                             do {
+                                let nearbyTasks = self.nearby?.suspend() ?? []
+                                for task in nearbyTasks { await task.value }
                                 try queue.remove(accountId: session.accountId, captureId: item.captureId)
+                                try await self.nearby?.forgetOwnedCapture(item.captureId)
                                 try await self.library.remove(accountId: session.accountId, captureId: item.captureId)
                                 self.uploadErrors[kind] = nil
                                 self.captureBlocked = self.uploadErrors.values.contains { $0 != "Offline" }
                                 self.refreshCaptures()
+                                if self.active { self.nearby?.activate() }
                             } catch {
                                 self.uploadErrors[kind] = "Upload paused"
                                 self.captureBlocked = true
@@ -271,7 +328,7 @@ final class AppModel: ObservableObject {
                             failures += 1
                             if let apiError = error as? APIError, [400, 409, 413].contains(apiError.status) {
                                 self.uploadErrors[kind] = apiError.status == 413 ? "Storage full" : "Upload paused"
-                                self.captureBlocked = true; self.camera?.stopRecording()
+                                self.captureBlocked = true; self.camera?.stopRecording(interrupted: true)
                             } else { self.uploadErrors[kind] = "Offline" }
                             try? await Task.sleep(for: .seconds(min(30, pow(2, Double(min(failures, 5))))))
                         }
