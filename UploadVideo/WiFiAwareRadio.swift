@@ -45,7 +45,12 @@ final class WiFiAwareRadio {
                 case .ready: status(nil, "Ready for nearby people")
                 case .failed(let error):
                     self.listener = nil; listener.cancel()
-                    failed(error.wifiAware?.localizedDescription ?? "Nearby could not start. Try again.")
+                    if case .publisherTimeout? = error.wifiAware {
+                        // Discovery expires independently of established streams.
+                        // Renew it until the user stops sharing.
+                        do { try self.share(peers: peers, identity: identity, source: source, failed: failed, accepted: accepted, status: status) }
+                        catch { failed(error.localizedDescription) }
+                    } else { failed(error.wifiAware?.localizedDescription ?? "Nearby could not start. Try again.") }
                 case .waiting: status(nil, "Turn on Wi-Fi to share nearby")
                 default: break
                 }
@@ -97,14 +102,13 @@ final class WiFiAwareRadio {
         }
     }
 
-    func join(endpoint: NWEndpoint, peers: PeerStore, identity: DeviceIdentity, store: ReceivedMediaStore,
+    func join(device: WAPairedDevice, peers: PeerStore, identity: DeviceIdentity, store: ReceivedMediaStore,
               consent: @escaping @MainActor (PeerApproval) async -> Bool,
               accepted: @escaping @MainActor (PeerApproval) -> Void,
               status: @escaping @MainActor (String) -> Void) throws {
         stopReceiving()
-        endpoints = [endpoint]
+        browse(for: device)
         let run = receiveGeneration
-        var paired: WAPairedDevice?
         receiving = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self, self.receiveGeneration == run else { return }
@@ -118,12 +122,8 @@ final class WiFiAwareRadio {
                         status("Connecting")
                         try await channel.start()
                         guard let path = try await connection.currentPath?.wifiAware,
-                              paired == nil || paired?.id == path.endpoint.device.id else { throw PeerStore.failure("The paired phone changed") }
+                              device.id == path.endpoint.device.id else { throw PeerStore.failure("The paired phone changed") }
                         try Task.checkCancellation()
-                        if paired == nil {
-                            paired = path.endpoint.device
-                            self.browse(for: path.endpoint.device)
-                        }
                         let approval = try await NearbyPairing.receive(channel: channel, store: peers, identity: identity, consent: consent)
                         try Task.checkCancellation(); accepted(approval); status("Receiving")
                         try await NearbyTransfer.receive(channel: channel, store: store, approval: approval)
@@ -137,14 +137,25 @@ final class WiFiAwareRadio {
         }
     }
     private func browse(for paired: WAPairedDevice) {
+        browser?.cancel(); endpoints = []
         let provider: WASubscriberBrowser = .wifiAware(.connecting(to: .selected([paired]), from: WASubscribableService.allServices[Self.service]!))
-        let browser = NWBrowser(for: provider.makeDescriptor(), using: provider.configureParameters(.tcp))
+        let parameters = provider.configureParameters(.tcp)
+        parameters.serviceClass = .interactiveVideo; parameters.wifiAware = .realtime
+        let browser = NWBrowser(for: provider.makeDescriptor(), using: parameters)
         self.browser = browser
         let run = receiveGeneration
-        browser.browseResultsChangedHandler = { [weak self] results, _ in
+        browser.stateUpdateHandler = { [weak self, weak browser] state in
             Task { @MainActor in
-                guard self?.receiveGeneration == run else { return }
-                self?.endpoints = results.filter { (try? provider.makeEndpoint(from: $0))?.device.id == paired.id }.map(\.endpoint)
+                guard let self, let browser, self.receiveGeneration == run, self.browser === browser else { return }
+                if case .failed(let error) = state, case .subscriberTimeout? = error.wifiAware {
+                    self.browse(for: paired)
+                }
+            }
+        }
+        browser.browseResultsChangedHandler = { [weak self, weak browser] results, _ in
+            Task { @MainActor in
+                guard let self, let browser, self.receiveGeneration == run, self.browser === browser else { return }
+                self.endpoints = results.filter { (try? provider.makeEndpoint(from: $0))?.device.id == paired.id }.map(\.endpoint)
             }
         }
         browser.start(queue: .main)

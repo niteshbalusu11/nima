@@ -2,7 +2,6 @@ import SwiftUI
 import AVKit
 import DeviceDiscoveryUI
 import WiFiAware
-@preconcurrency import Network
 
 struct NearbyView: View {
     @ObservedObject var model: AppModel
@@ -44,7 +43,9 @@ private struct NearbyControls: View {
     @ObservedObject var model: AppModel
     @ObservedObject var nearby: NearbySharing
     @State private var pairing = false
+    @State private var pairingBaseline: Set<WAPairedDevice.ID> = []
     @State private var joining = false
+    @State private var selectedDevice: WAPairedDevice?
     @State private var ready = false
     @State private var error: String?
     var body: some View {
@@ -52,8 +53,15 @@ private struct NearbyControls: View {
             if nearby.receiving == nil {
                 Section {
                     Button(nearby.sharing ? "Add nearby person" : "Share nearby", systemImage: "antenna.radiowaves.left.and.right") {
-                        do { try nearby.startSharing(start: model.recording ? model.recordingStarted : Date()); pairing = true }
-                        catch { self.error = error.localizedDescription }
+                        let addingPerson = nearby.sharing
+                        Task {
+                            do {
+                                let devices = try await WAPairedDevice.allDevices.current() ?? [:]
+                                try nearby.startSharing(start: model.recording ? model.recordingStarted : Date())
+                                pairingBaseline = Set(devices.keys)
+                                pairing = addingPerson || devices.isEmpty
+                            } catch { self.error = error.localizedDescription }
+                        }
                     }.disabled(!ready)
                     if nearby.sharing {
                         if let error = nearby.sharingError {
@@ -112,13 +120,22 @@ private struct NearbyControls: View {
                 NativePairingView()
                     .navigationTitle("Share nearby")
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { pairing = false } } }
+                    .task {
+                        do {
+                            for try await devices in WAPairedDevice.allDevices {
+                                try Task.checkCancellation()
+                                if !Set(devices.keys).isSubset(of: pairingBaseline) { pairing = false; return }
+                            }
+                        } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+                    }
             }
         }
-        .sheet(isPresented: $joining) {
-            NativePickerView { endpoint in
-                joining = false
-                do { try model.joinNearby(endpoint) } catch { self.error = error.localizedDescription }
-            } failed: { text in joining = false; error = text }
+        .sheet(isPresented: $joining, onDismiss: {
+            guard let device = selectedDevice else { return }
+            selectedDevice = nil
+            do { try model.joinNearby(device) } catch { self.error = error.localizedDescription }
+        }) {
+            NearbyJoinView { device in selectedDevice = device; joining = false }
         }
         .confirmationDialog("Receive from \(name(nearby.consent?.senderName ?? ""))?", isPresented: Binding(
             get: { nearby.consent != nil }, set: { if !$0 { nearby.resolveConsent(false) } }), titleVisibility: .visible) {
@@ -138,39 +155,55 @@ private struct NearbyControls: View {
 }
 
 @available(iOS 26.0, *)
+private struct NearbyJoinView: View {
+    let selected: (WAPairedDevice) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var devices: [WAPairedDevice] = []
+    @State private var error: String?
+    var body: some View {
+        NavigationStack {
+            List {
+                if !devices.isEmpty {
+                    Section("Choose a phone") {
+                        ForEach(devices) { device in
+                            Button(device.name ?? device.pairingInfo?.pairingName ?? "Nearby iPhone", systemImage: "iphone") {
+                                selected(device)
+                            }
+                        }
+                    }
+                }
+                Section {
+                    // Pairing grants device access. Observe allDevices instead of
+                    // relying on the system picker to return a service endpoint.
+                    DevicePicker(WASubscriberBrowser.wifiAware(.connecting(to: .userSpecifiedDevices, from: WASubscribableService.allServices[WiFiAwareRadio.service]!)), access: .permanent) { _ in } label: {
+                        Label("Pair a phone", systemImage: "plus")
+                    } fallback: {
+                        Text("Nearby pairing is unavailable on this phone")
+                    }
+                }
+                if let error { Text(error).font(.footnote) }
+            }
+            .navigationTitle("Join nearby").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        }
+        .task {
+            do {
+                for try await paired in WAPairedDevice.allDevices {
+                    try Task.checkCancellation()
+                    devices = paired.values.sorted { $0.id < $1.id }
+                }
+            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+        }
+    }
+}
+
+@available(iOS 26.0, *)
 private struct NativePairingView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> DDDevicePairingViewController {
         let provider: WAPublisherListener = .wifiAware(.connecting(to: WAPublishableService.allServices[WiFiAwareRadio.service]!, from: .userSpecifiedDevices))
         return DDDevicePairingViewController(listenerProvider: provider, access: .permanent)
     }
     func updateUIViewController(_ controller: DDDevicePairingViewController, context: Context) {}
-}
-
-@available(iOS 26.0, *)
-private struct NativePickerView: UIViewControllerRepresentable {
-    let selected: (NWEndpoint) -> Void
-    let failed: (String) -> Void
-    final class Coordinator { var task: Task<Void, Never>? }
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeUIViewController(context: Context) -> UIViewController {
-        let provider: WASubscriberBrowser = .wifiAware(.connecting(to: .userSpecifiedDevices, from: WASubscribableService.allServices[WiFiAwareRadio.service]!))
-        let parameters = provider.configureParameters(.tcp)
-        parameters.serviceClass = .interactiveVideo; parameters.wifiAware = .realtime
-        guard let picker = DDDevicePickerViewController(browseDescriptor: provider.makeDescriptor(), parameters: parameters, access: .permanent) else {
-            Task { @MainActor in failed("Nearby pairing is unavailable on this phone") }
-            return UIViewController()
-        }
-        context.coordinator.task = Task { @MainActor in
-            do {
-                let endpoint = try await picker.endpoint
-                guard !Task.isCancelled else { return }
-                selected(endpoint)
-            } catch { if !Task.isCancelled { failed(error.localizedDescription) } }
-        }
-        return picker
-    }
-    func updateUIViewController(_ controller: UIViewController, context: Context) {}
-    static func dismantleUIViewController(_ controller: UIViewController, coordinator: Coordinator) { coordinator.task?.cancel() }
 }
 
 struct ReceivedCopiesView: View {

@@ -1,5 +1,5 @@
 import SwiftUI
-@preconcurrency import Network
+import WiFiAware
 import AVFoundation
 @preconcurrency import CoreLocation
 
@@ -128,9 +128,9 @@ final class AppModel: ObservableObject {
         if active { nearby?.activate() }
     }
     @available(iOS 26.0, *)
-    func joinNearby(_ endpoint: NWEndpoint) throws {
+    func joinNearby(_ device: WAPairedDevice) throws {
         guard !recording, !stopping, !preparingCapture, let nearby else { throw APIError(status: 0, message: "Finish recording first") }
-        try nearby.join(endpoint)
+        try nearby.join(device)
         location.stop(); camera?.suspend()
     }
     func receiveNearby(from approval: PeerApproval?) async throws {

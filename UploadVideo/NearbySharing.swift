@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-@preconcurrency import Network
 #if os(iOS)
 import WiFiAware
 #endif
@@ -111,12 +110,12 @@ final class NearbySharing: ObservableObject {
     }
     #if os(iOS)
     @available(iOS 26.0, *)
-    func join(_ endpoint: NWEndpoint) throws {
+    func join(_ device: WAPairedDevice) throws {
         guard active else { throw CancellationError() }
         try receive(from: nil)
         receiving = "joining"; receiveStatus = "Connecting"; idleTimer()
         do {
-            try aware.join(endpoint: endpoint, peers: peers, identity: signingIdentity, store: store,
+            try aware.join(device: device, peers: peers, identity: signingIdentity, store: store,
                 consent: { [weak self] approval in await self?.requestConsent(approval) ?? false },
                 accepted: { [weak self] approval in self?.receiving = approval.id },
                 status: { [weak self] text in self?.receiveStatus = text })
