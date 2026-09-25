@@ -1,6 +1,6 @@
 # Nearby sharing pilot
 
-The feature is implemented on `codex/nearby-feasibility`. Both phones need this branch's iOS build and a backend built from this branch. The existing TestFlight build and deployed API have not been updated by this work.
+The feature is merged into `master`. Both phones need a current iOS build and must use the same server. Release builds have been installed directly on the iPhone 17 and iPhone 17 Pro; TestFlight has not been updated by this work.
 
 ## What is testable
 
@@ -13,7 +13,7 @@ Foreground operation is supported. Keep the app open while receiving or uploadin
 
 ## Install and pair two phones
 
-Debug builds on this branch are pinned to `https://26bd-50-222-161-203.ngrok-free.app`, reaching the Go API and RustFS on Nitesh's Mac. Pull the latest branch and build **Debug** with your own valid development signing. No `Local.xcconfig` is needed; the pin takes precedence over local overrides. Release still uses the deployed API, which has not been updated by this work. The Mac, RustFS, gateway and ngrok must stay running.
+Debug and Release builds point to `https://upload-video-api.fly.dev`, using Tigris storage. Pull `master` and build with valid development signing. The earlier ngrok/RustFS setup was a local pilot and is no longer the default endpoint.
 
 Nearby requires **iOS 26 or later and Wi-Fi Aware-capable hardware** (checked at runtime). Camera and cloud upload keep their iOS 17 minimum. Enable the Wi-Fi Aware Publish and Subscribe capability in your signing profile; the checked-in entitlements and service declaration are included in both build configurations. The app's identity remains Nima / `com.prodata.uploadvideo` for the installed pilot build.
 
@@ -74,8 +74,8 @@ Saved receipts are independent of cloud acknowledgements. Receipt inventories ar
 
 Release's HTTP exception is limited to `127.0.0.1` for that on-device player. API/storage requests continue requiring HTTPS, and nearby connections require TLS 1.3 over Wi-Fi Aware. A server-signed credential must match the TLS peer key before any app identity or permission is accepted. Apple supports [IP-specific ATS exceptions from iOS 17](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsexceptiondomains).
 
-## Before enabling Tigris relay uploads
+## Tigris relay validation
 
 Run `./tools/verify-relay-storage.sh /absolute/path/to/private-tigris.env` against the intended Tigris configuration. This checks signed SHA-256 enforcement before final-key occupancy and conditional-write races using disposable objects, then removes them. See [probe setup](nearby-feasibility.md#run-the-storage-check). Ordinary existing Tigris uploads passing does not establish the stronger delegated-upload integrity guarantee.
 
-Keep relay admission disabled on production until this check and the device pilot pass. RustFS is the verified provider for this PR's end-to-end test. No production setting, TestFlight build, or deployed service was changed by this implementation.
+Fly enables relay admission with `NEARBY_RELAY_ENABLED=true`. Keep Nima open on the receiving phone while it backs up saved copies; no reinstall or repeated nearby transfer is needed when the server setting changes. The three-recipient automated media recovery test uses RustFS; the physical-device evidence above remains separate from storage capability checks.

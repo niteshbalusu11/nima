@@ -12,6 +12,7 @@ kill_timeout = "15s"
   DATABASE_PATH = "/data/app.sqlite"
   S3_REGION = "auto"
   S3_PATH_STYLE = "false"
+  NEARBY_RELAY_ENABLED = "true"
 
 # SQLite has one writer and one volume. Deploy with --ha=false; do not scale out.
 [deploy]

@@ -48,7 +48,8 @@ func TestRelayStorage(t *testing.T) {
 		o.Key = key(t)
 		signed := relayProbeAuthorization(t, ctx, store, o.Key, original)
 		status, code, err := relayProbePUT(ctx, signed, changed)
-		if err != nil || status != http.StatusBadRequest || code != "BadDigest" {
+		// Tigris and RustFS use different error codes for a checksum mismatch.
+		if err != nil || status != http.StatusBadRequest || (code != "BadDigest" && code != "XAmzContentSHA256Mismatch") {
 			t.Fatalf("corrupt bytes must fail SHA-256 validation: status=%d code=%q error=%v", status, code, err)
 		}
 		// A successful correct retry proves the rejected body did not occupy the immutable key.
