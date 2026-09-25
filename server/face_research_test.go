@@ -184,6 +184,11 @@ func TestResearchConsentAcrossOwnersAndWithdrawal(t *testing.T) {
 		t.Fatal("legacy source consent was used across accounts")
 	}
 	optIn(source, admin, true, 200)
+	s, body = request(t, h.server.URL, "GET", "/super-admin/captures/"+source+"/faces", admin, nil)
+	mustStatus(t, 200, s, body)
+	if strings.Contains(string(body), `"reference_name":"XYZ"`) {
+		t.Fatal("legacy enrollment still appeared as an active reference")
+	}
 	s, body = request(t, h.server.URL, "GET", "/super-admin/captures/"+otherCapture+"/faces", admin, nil)
 	mustStatus(t, 200, s, body)
 	if strings.Contains(string(body), "XYZ") {
