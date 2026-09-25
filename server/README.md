@@ -107,7 +107,7 @@ Protect backups as user data. They contain account/media metadata, not the media
 
 ## API
 
-The nearby-sharing foundation adds device registration and directional peer consent. See [the protocol and verification guide](../docs/nearby-identities.md) for the new routes, migration 5, session compatibility, and sharing-only revocation semantics. Delegated media uploads are not enabled yet.
+The nearby-sharing foundation adds device registration and directional peer consent. See [the protocol and verification guide](../docs/nearby-identities.md) for migration 5, session compatibility, and sharing-only revocation semantics. Migration 6 adds [signed delegated upload routes](../docs/relay-api.md), disabled by default. `NEARBY_RELAY_ENABLED=true` enables these routes for a validated environment; actual Tigris integrity/concurrency checks and physical-device acceptance remain release gates. No production setting has been changed.
 
 - Public: `GET /health`, `POST /enroll`.
 - Authenticated: `GET/PATCH /me`, `PUT /captures/{id}`, `POST /captures/{id}/objects/reserve`, `POST /captures/{id}/objects/ack`, `GET /captures`, `GET /captures/{id}`, `DELETE /captures/{id}`.

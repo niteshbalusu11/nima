@@ -230,7 +230,8 @@ struct UploadWorker: Sendable {
             guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
             // A repeated conditional PUT is expected to return 412; /ack verifies the original bytes.
             guard (200..<300).contains(http.statusCode) || http.statusCode == 412 else {
-                throw APIError(status: http.statusCode == 401 ? 503 : http.statusCode, message: "Upload paused")
+                // Another contributor may still be committing a conditional write; retry a storage 409.
+                throw APIError(status: [401, 409].contains(http.statusCode) ? 503 : http.statusCode, message: "Upload paused")
             }
             struct Ack: Encodable { let sequence: Int }
             let _: OK = try await api.request("POST", "captures/\(item.captureId)/objects/ack", body: API.encode(Ack(sequence: item.sequence)))

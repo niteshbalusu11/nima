@@ -1,6 +1,6 @@
 # Signed media v1 and durable receiving
 
-This is the signed-record and storage portion of milestone 2 in [the engineering plan](nearby-sharing-plan.md). `MediaRecords.swift` signs/verifies records; `server/media_records.go` verifies the same bytes. `OwnerMediaRecords.swift` prepares stable records from retained camera objects and `ReceivedMediaStore.swift` persists approved copies. The camera persists ending intent, but an automatic sharing worker, nearby transport, and relay HTTP routes are not wired to these modules yet.
+This is the signed-record and storage portion of milestone 2 in [the engineering plan](nearby-sharing-plan.md). `MediaRecords.swift` signs/verifies records; `server/media_records.go` verifies the same bytes. `OwnerMediaRecords.swift` prepares stable records from retained camera objects and `ReceivedMediaStore.swift` persists approved copies. The camera persists ending intent, and the [relay HTTP backend](relay-api.md) consumes the same records behind an admission switch. Automatic native sharing/upload workers and nearby transport are not wired to these modules yet.
 
 ## Envelope and encoding
 
@@ -120,4 +120,4 @@ The receive tests cover video/photo ownership, corrupt and truncated bodies, ove
 
 Source tests prepare a growing recording, deliver its signed objects into the real receive store, acknowledge owner cloud uploads, persist an interruption, and reopen both metadata and queue. They check exact signature reuse, grant renewal, explicit recipient selection, mismatched private keys, revocation, deletion, and corruption before signing. The existing live encoder test additionally checks durable terminal intent after `AVAssetWriter` finishes while cloud uploads run concurrently.
 
-Remaining milestone 2 work includes combined storage accounting, retention/deletion controls, and foreground sharing-worker integration. Next milestones connect framing and multi-recipient delivery, add server relay authorization/reservations and the recipient upload worker, then integrate the user-facing recovery and playback flows. Physical offline networking and actual Tigris integrity checks remain release gates.
+Remaining milestone 2 work includes combined storage accounting, retention/deletion controls, and foreground sharing-worker integration. The [server relay routes](relay-api.md) are implemented and tested behind a disabled-by-default switch. Next milestones connect framing and multi-recipient delivery and the native recipient upload worker, then integrate the user-facing recovery and playback flows. Physical offline networking and actual Tigris integrity checks remain release gates.

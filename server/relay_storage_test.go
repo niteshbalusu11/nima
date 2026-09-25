@@ -14,9 +14,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // Opt-in capability probe. It writes only new random keys and removes them afterward.
@@ -177,24 +174,22 @@ func relayProbeAuthorization(t *testing.T, ctx context.Context, store *s3Store, 
 	t.Helper()
 	hash := sha256.Sum256(body)
 	checksum := base64.StdEncoding.EncodeToString(hash[:])
-	p, err := store.signer.PresignPutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(store.bucket), Key: aws.String(key), ContentLength: aws.Int64(int64(len(body))),
-		ChecksumSHA256: aws.String(checksum), IfNoneMatch: aws.String("*"),
-	}, s3.WithPresignExpires(2*time.Minute))
+	o := makeObject(body, "media", 1)
+	o.Key = key
+	signed, err := store.uploadRelay(ctx, o, uploadURLLifetime)
 	if err != nil {
 		t.Fatal("could not sign probe request")
 	}
-	signed := signedUpload{URL: p.URL, Headers: map[string]string{}}
-	for k, v := range p.SignedHeader {
-		if k != "Host" && len(v) > 0 {
-			signed.Headers[k] = v[0]
-		}
-	}
-	u, err := url.Parse(p.URL)
+	u, err := url.Parse(signed.URL)
 	if err != nil {
 		t.Fatal("invalid probe authorization URL")
 	}
-	bound := p.SignedHeader.Get("X-Amz-Checksum-Sha256") == checksum
+	bound := false
+	for k, value := range signed.Headers {
+		if strings.EqualFold(k, "x-amz-checksum-sha256") && value == checksum {
+			bound = true
+		}
+	}
 	for k, v := range u.Query() {
 		if strings.EqualFold(k, "x-amz-checksum-sha256") && len(v) == 1 && v[0] == checksum {
 			bound = true

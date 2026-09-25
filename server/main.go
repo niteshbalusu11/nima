@@ -159,7 +159,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		app := &api{db: db, store: store}
+		app := &api{db: db, store: store, relayEnabled: os.Getenv("NEARBY_RELAY_ENABLED") == "true"}
 		srv := &http.Server{Addr: env("LISTEN_ADDR", "127.0.0.1:8080"), Handler: withWebsite(app.handler()), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

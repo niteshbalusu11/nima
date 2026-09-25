@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -28,6 +29,9 @@ type objectStore interface {
 	verify(context.Context, object) (bool, error)
 	download(context.Context, string) (string, error)
 	remove(context.Context, string) error
+}
+type relayObjectStore interface {
+	uploadRelay(context.Context, object, time.Duration) (signedUpload, error)
 }
 type s3Store struct {
 	client *s3.Client
@@ -81,6 +85,29 @@ func (s *s3Store) upload(ctx context.Context, o object) (signedUpload, error) {
 		Bucket: aws.String(s.bucket), Key: aws.String(o.Key), ContentLength: aws.Int64(o.Size),
 		ContentType: aws.String(o.contentType()), ContentMD5: aws.String(o.MD5), IfNoneMatch: aws.String("*"),
 	}, func(p *s3.PresignOptions) { p.Expires = uploadURLLifetime })
+	if err != nil {
+		return signedUpload{}, err
+	}
+	headers := map[string]string{}
+	for k, v := range p.SignedHeader {
+		if k != "Host" && len(v) > 0 {
+			headers[k] = v[0]
+		}
+	}
+	return signedUpload{p.URL, headers}, nil
+}
+func (s *s3Store) uploadRelay(ctx context.Context, o object, lifetime time.Duration) (signedUpload, error) {
+	sha, err := hex.DecodeString(o.SHA256)
+	if err != nil || len(sha) != 32 || lifetime <= 0 || lifetime > uploadURLLifetime {
+		return signedUpload{}, errors.New("invalid relay upload authorization")
+	}
+	// SHA-256 is enforced by storage before the immutable key can be occupied.
+	// Content-MD5 is intentionally unnecessary on this path.
+	p, err := s.signer.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.bucket), Key: aws.String(o.Key), ContentLength: aws.Int64(o.Size),
+		ContentType: aws.String(o.contentType()), ChecksumSHA256: aws.String(base64.StdEncoding.EncodeToString(sha)),
+		IfNoneMatch: aws.String("*"),
+	}, s3.WithPresignExpires(lifetime))
 	if err != nil {
 		return signedUpload{}, err
 	}

@@ -66,6 +66,26 @@ CREATE TABLE peer_invitations (
  approval_id TEXT REFERENCES peer_approvals(id), CHECK(sender_device_id != recipient_device_id));
 CREATE INDEX peer_invitations_pair ON peer_invitations(sender_device_id,recipient_device_id);
 `,
+	`
+ALTER TABLE captures ADD COLUMN owner_metadata_pending INTEGER NOT NULL DEFAULT 0 CHECK(owner_metadata_pending IN (0,1));
+CREATE TABLE shared_captures (
+ capture_id TEXT PRIMARY KEY REFERENCES captures(id), recorder_device_id TEXT NOT NULL REFERENCES devices(id),
+ descriptor_payload TEXT NOT NULL, descriptor_signature TEXT NOT NULL,
+ completion_payload TEXT, completion_signature TEXT);
+CREATE TABLE relay_grants (
+ id TEXT PRIMARY KEY, capture_id TEXT NOT NULL REFERENCES shared_captures(capture_id),
+ approval_id TEXT NOT NULL REFERENCES peer_approvals(id),
+ payload TEXT NOT NULL, signature TEXT NOT NULL);
+CREATE INDEX relay_grants_capture ON relay_grants(capture_id);
+CREATE TABLE shared_object_records (
+ capture_id TEXT NOT NULL, sequence INTEGER NOT NULL, payload TEXT NOT NULL, signature TEXT NOT NULL,
+ PRIMARY KEY(capture_id,sequence),
+ FOREIGN KEY(capture_id,sequence) REFERENCES objects(capture_id,sequence) ON DELETE CASCADE);
+CREATE TABLE relay_grant_objects (
+ grant_id TEXT NOT NULL REFERENCES relay_grants(id), capture_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+ PRIMARY KEY(grant_id,sequence),
+ FOREIGN KEY(capture_id,sequence) REFERENCES objects(capture_id,sequence) ON DELETE CASCADE);
+`,
 }
 
 // Run before serving requests. The write lock also serializes startup with CLI commands.
