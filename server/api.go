@@ -24,9 +24,10 @@ const accountQuota int64 = 10 << 30
 var captureID = regexp.MustCompile(`^[a-fA-F0-9-]{32,36}$`)
 
 type api struct {
-	db      *sql.DB
-	store   objectStore
-	limiter inviteLimiter
+	db           *sql.DB
+	store        objectStore
+	limiter      inviteLimiter
+	faceDetector func(context.Context, string, string) ([]detectedFace, error)
 }
 type profile struct {
 	ID             string `json:"id"`
@@ -131,6 +132,8 @@ func (a *api) handler() http.Handler {
 	protected.HandleFunc("DELETE /captures/{id}", a.deleteCapture)
 	protected.HandleFunc("GET /super-admin/captures", a.listSuperAdminCaptures)
 	protected.HandleFunc("GET /super-admin/captures/{id}", a.getSuperAdminCapture)
+	protected.HandleFunc("GET /super-admin/captures/{id}/faces", a.listFaces)
+	protected.HandleFunc("GET /super-admin/captures/{id}/faces/{face}", a.faceImage)
 	mux.Handle("/", a.auth(protected))
 	return mux
 }
@@ -588,7 +591,7 @@ func (a *api) getSuperAdminCapture(w http.ResponseWriter, r *http.Request) {
 		failure(w, 404, "Not found")
 		return
 	}
-	a.captureDetail(w, r, kind)
+	a.captureDetail(w, r, kind, true)
 }
 
 func (a *api) getCapture(w http.ResponseWriter, r *http.Request) {
@@ -596,10 +599,10 @@ func (a *api) getCapture(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a.captureDetail(w, r, kind)
+	a.captureDetail(w, r, kind, false)
 }
 
-func (a *api) captureDetail(w http.ResponseWriter, r *http.Request, kind string) {
+func (a *api) captureDetail(w http.ResponseWriter, r *http.Request, kind string, dashboard bool) {
 	var lat, lon, accuracy sql.NullFloat64
 	var timestamp sql.NullInt64
 	var finished bool
@@ -663,7 +666,11 @@ func (a *api) captureDetail(w http.ResponseWriter, r *http.Request, kind string)
 		}
 		list[i].Acknowledged = verified
 		if verified {
-			list[i].URL, e = a.store.download(r.Context(), list[i].Key)
+			if dashboard {
+				list[i].URL, e = a.store.downloadDashboard(r.Context(), list[i].Key)
+			} else {
+				list[i].URL, e = a.store.download(r.Context(), list[i].Key)
+			}
 			if e != nil {
 				failure(w, 503, "Storage unavailable")
 				return

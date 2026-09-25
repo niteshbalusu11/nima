@@ -44,6 +44,14 @@ func (a *api) deleteCapture(w http.ResponseWriter, r *http.Request) {
 		failure(w, 503, "Unavailable")
 		return
 	}
+	if _, err = tx.Exec("DELETE FROM face_groups WHERE capture_id=?", id); err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	if _, err = tx.Exec("DELETE FROM face_jobs WHERE capture_id=?", id); err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
 	if err = tx.Commit(); err != nil {
 		failure(w, 503, "Unavailable")
 		return

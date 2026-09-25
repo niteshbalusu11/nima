@@ -93,6 +93,30 @@ func TestSuperAdminMigrationPreservesExistingAccountsAndInvites(t *testing.T) {
 	}
 }
 
+func TestFaceMigrationPreservesExistingCaptures(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "prior-faces.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := migrate(db, migrations[:4]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO accounts(id,created_at) VALUES('owner',1)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO captures(id,account_id,kind,created_at) VALUES('capture','owner','photo',1)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db, migrations); err != nil {
+		t.Fatal(err)
+	}
+	var kind string
+	if err := db.QueryRow("SELECT kind FROM captures WHERE id='capture'").Scan(&kind); err != nil || kind != "photo" {
+		t.Fatalf("existing capture changed: %q %v", kind, err)
+	}
+}
+
 func TestMigrationsUpgradeRollbackAndNewerVersion(t *testing.T) {
 	db, err := openDB(filepath.Join(t.TempDir(), "upgrade.sqlite"))
 	if err != nil {

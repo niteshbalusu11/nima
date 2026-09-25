@@ -7,7 +7,7 @@ import (
 )
 
 func TestFlyTigrisEnvironment(t *testing.T) {
-	for _, key := range []string{"S3_ENDPOINT", "S3_PUBLIC_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_REGION", "S3_PATH_STYLE"} {
+	for _, key := range []string{"S3_ENDPOINT", "S3_PUBLIC_ENDPOINT", "S3_DASHBOARD_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_REGION", "S3_PATH_STYLE"} {
 		t.Setenv(key, "")
 	}
 	t.Setenv("APP_ENV", "production")
@@ -48,6 +48,7 @@ func TestSeparatePublicStorageEndpoint(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("S3_ENDPOINT", "http://127.0.0.1:9000")
 	t.Setenv("S3_PUBLIC_ENDPOINT", "http://[fd49:60c4:a4e8::2]:9000")
+	t.Setenv("S3_DASHBOARD_ENDPOINT", "http://127.0.0.1:9000")
 	t.Setenv("S3_BUCKET", "local-bucket")
 	t.Setenv("S3_ACCESS_KEY_ID", "test-access-key")
 	t.Setenv("S3_SECRET_ACCESS_KEY", "test-secret-key")
@@ -66,6 +67,14 @@ func TestSeparatePublicStorageEndpoint(t *testing.T) {
 	u, err := url.Parse(signed)
 	if err != nil || u.Host != "[fd49:60c4:a4e8::2]:9000" {
 		t.Fatalf("signed URL has wrong host: %s", signed)
+	}
+	dashboardSigned, err := store.downloadDashboard(context.Background(), "test-object")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dashboardURL, err := url.Parse(dashboardSigned)
+	if err != nil || dashboardURL.Host != "127.0.0.1:9000" {
+		t.Fatalf("dashboard URL has wrong host: %s", dashboardSigned)
 	}
 	t.Setenv("APP_ENV", "production")
 	if _, err := newS3(); err == nil {

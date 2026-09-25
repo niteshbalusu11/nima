@@ -33,6 +33,13 @@
 .dash-player-foot button:disabled { opacity: .4; }
 .dash-stage-meta { min-height: 60px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #686f6c; font-size: 10px; font-weight: 650; letter-spacing: .08em; }
 .dash-shortcuts { color: #929a96; letter-spacing: 0; white-space: nowrap; }
+.dash-faces { height: 177px; flex: none; border-top: 1px solid #27292a; padding: 12px 32px; }
+.dash-faces-head { display: flex; justify-content: space-between; color: #929a96; font-size: 11px; }
+.dash-faces-list { display: flex; gap: 12px; overflow-x: auto; padding-top: 10px; }
+.dash-faces-list > p { margin: 17px 0; color: #898f8b; font-size: 12px; }
+.dash-face { width: 92px; flex: none; display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+.dash-face img, .dash-face-placeholder { width: 76px; height: 76px; object-fit: cover; background: #252a28; }
+.dash-face small { color: #898f8b; font-size: 10px; }
 .dash-feed { min-width: 0; max-height: calc(100svh - 72px); border-left: 1px solid #27292a; display: flex; flex-direction: column; }
 .dash-feed-head { min-height: 132px; padding: 28px 22px 23px; display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid #252928; }
 .dash-feed-head h2 { margin: 10px 0 0; font-size: 23px; font-weight: 650; letter-spacing: -.045em; }
@@ -87,5 +94,6 @@
   .dash-player-foot span:nth-child(2) { display: none; }
   .dash-stage-meta { min-height: 50px; padding: 0 16px; font-size: 9px; }
   .dash-shortcuts { display: none; }
+  .dash-faces { padding: 12px 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .dash-page *, .dash-login * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
