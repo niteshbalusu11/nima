@@ -13,6 +13,7 @@ final class WiFiAwareRadio {
     static var publisher: WAPublisherListener { .wifiAware(.connecting(to: WAPublishableService.allServices[service]!, from: .allPairedDevices)) }
     static var subscriber: WASubscriberBrowser { .wifiAware(.connecting(to: .allPairedDevices, from: WASubscribableService.allServices[service]!)) }
     private var listener: NWListener?
+    private var pairing: Task<Void, Never>?
     private var browser: NWBrowser?
     private var endpoints: [NWEndpoint] = []
     private var receiving: Task<Void, Never>?
@@ -24,7 +25,7 @@ final class WiFiAwareRadio {
     private var receiveGeneration = UUID()
 
     func share(peers: PeerStore, identity: DeviceIdentity, source: @escaping @MainActor () -> [NearbyTransfer.Delivery],
-               ready: @escaping @MainActor (Bool) -> Void,
+               failed: @escaping @MainActor (String) -> Void,
                accepted: @escaping @MainActor (PeerApproval) throws -> Void,
                status: @escaping @MainActor (String?, String) -> Void) throws {
         guard Self.supported else { throw PeerStore.failure("Nearby is unavailable on this iPhone") }
@@ -37,13 +38,15 @@ final class WiFiAwareRadio {
         listener.service = provider.service
         self.listener = listener
         let run = generation
-        listener.stateUpdateHandler = { [weak self] state in
+        listener.stateUpdateHandler = { [weak self, weak listener] state in
             Task { @MainActor in
-                guard self?.generation == run else { return }
+                guard let self, let listener, self.generation == run, self.listener === listener else { return }
                 switch state {
-                case .ready: ready(true); status(nil, "Ready for nearby people")
-                case .failed: ready(false); status(nil, "Nearby unavailable. Stop and try again.")
-                case .waiting: ready(false); status(nil, "Turn on Wi-Fi to share nearby")
+                case .ready: status(nil, "Ready for nearby people")
+                case .failed(let error):
+                    self.listener = nil; listener.cancel()
+                    failed(error.wifiAware?.localizedDescription ?? "Nearby could not start. Try again.")
+                case .waiting: status(nil, "Turn on Wi-Fi to share nearby")
                 default: break
                 }
             }
@@ -74,7 +77,24 @@ final class WiFiAwareRadio {
                 }
             }
         }
-        listener.start(queue: .main)
+        // Publishing to allPairedDevices fails with WAError.noPairedDevices on
+        // a fresh installation. Pairing UI must be able to run before this starts.
+        status(nil, "Pair a nearby phone")
+        pairing = Task { [weak self] in
+            do {
+                for try await devices in WAPairedDevice.allDevices {
+                    try Task.checkCancellation()
+                    guard self?.generation == run else { return }
+                    guard !devices.isEmpty else { continue }
+                    listener.start(queue: .main)
+                    return
+                }
+            } catch {
+                guard !Task.isCancelled, self?.generation == run else { return }
+                self?.listener = nil; listener.cancel()
+                failed(error.localizedDescription)
+            }
+        }
     }
 
     func join(endpoint: NWEndpoint, peers: PeerStore, identity: DeviceIdentity, store: ReceivedMediaStore,
@@ -137,7 +157,8 @@ final class WiFiAwareRadio {
     }
     func stopSharing() -> [Task<Void, Never>] {
         generation = UUID(); listener?.cancel(); listener = nil
-        let pending = Array(tasks.values); pending.forEach { $0.cancel() }
+        let pending = Array(tasks.values) + (pairing.map { [$0] } ?? [])
+        pairing = nil; pending.forEach { $0.cancel() }
         channels.values.forEach { $0.close() }; tasks.removeAll(); channels.removeAll(); permissions.removeAll()
         return pending
     }

@@ -30,6 +30,7 @@ For a different backend, update the temporary Debug pin and its publicly reachab
 ## First two-phone test
 
 1. After both phones have downloaded their initial credentials, test first pairing while offline. Disable cellular and disconnect both phones from access points; leave Wi-Fi enabled. Keep both apps in the foreground. Use Share/Join and confirm that first pairing, consent and transfer complete without a router or internet.
+   Start with no system-paired Nima devices on at least one phone: **Share nearby must open Apple's pairing screen immediately**. It must not wait for a media listener or show an endless error spinner. Cancel and reopen it, then pair through **Join nearby**. The media listener starts only after iOS supplies a paired device. Also test **Add nearby person** while an existing recipient is receiving.
 2. A records for 60 seconds and takes a photo during the recording. B should show growing saved counts and the photo in **Received**. Open the video there and verify video/audio playback **before A stops**.
 3. Stop normally. B should have every part and a known ending. Move B out of range and back during another recording; saved counts must catch up after reconnecting. Repeat with C, then D, if available. A slow recipient must not stall another recipient or the camera.
 4. Leave A offline or close its app. Give B a route to the configured API/storage server. B should upload into A's capture; check A's cloud dashboard from another client. Repeat with A and B online simultaneously, and with multiple recipients online.
@@ -51,6 +52,8 @@ Validation rerun for the Wi-Fi Aware migration on September 25, 2026:
 - `./tools/verify-local.sh`: full Go race suite, RustFS conditional/checksum writes and original live encoder/uploader/gallery regressions.
 - Signed Debug iPhone and unsigned Release iOS builds compile with the Wi-Fi Aware entitlement. The new frameworks are weak-linked, preserving startup support below iOS 26. Debug Simulator compilation is also checked; Simulator cannot validate Wi-Fi Aware radio.
 - The ngrok-facing RustFS checksum and conditional-create race probe passes, including the public signed-storage route.
+
+First-pairing regression, September 25, 2026: a temporary on-device diagnostic invoked the production `NearbySharing.startSharing()` path on the connected iPhone 17 with zero paired devices. Before the fix, the listener became ready and then failed with `NWError -11992`, decoded as `WAError.noPairedDevices`. The same check after the fix remained waiting for pairing for 12 seconds without starting/failing the listener. Both native pairing views now use the service's `.connecting` action with `.userSpecifiedDevices`; the UI no longer waits for listener readiness. Temporary instrumentation was removed. This radio precondition cannot be covered by the Mac loopback tests; the zero-pair UI and subsequent two-phone connection checks above remain physical-device regression checks.
 
 These are native/localhost tests, not evidence of iPhone-to-iPhone radio performance. Camera/cloud upload support iOS 17 and later; Nearby is gated to supported iOS 26+ devices. The physical OS/device matrix has not been exercised here.
 

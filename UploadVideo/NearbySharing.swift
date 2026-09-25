@@ -28,8 +28,8 @@ final class NearbySharing: ObservableObject {
     private var since: [String: Date]
     private var active = false
     @Published private(set) var sharing = false
-    @Published private(set) var sharingReady = false
     @Published private(set) var sharingStatus = ""
+    @Published private(set) var sharingError: String?
     @Published private(set) var consent: PeerApproval?
     private let signingIdentity: DeviceIdentity
     private var radio: AnyObject?
@@ -87,16 +87,16 @@ final class NearbySharing: ObservableObject {
         #if os(iOS)
         if #available(iOS 26.0, *), WiFiAwareRadio.supported {
             if !sharing { excluded = [] }
-            sharingStarted = start; sharing = true
+            sharingStarted = start; sharing = true; sharingError = nil
             do {
-                try aware.share(peers: peers, identity: signingIdentity, source: { [weak self] in self?.deliveries ?? [] }, ready: { [weak self] in self?.sharingReady = $0 }, accepted: { [weak self] approval in
+                try aware.share(peers: peers, identity: signingIdentity, source: { [weak self] in self?.deliveries ?? [] }, failed: { [weak self] in self?.sharingError = $0 }, accepted: { [weak self] approval in
                     guard let self, self.sharing, !self.excluded.contains(approval.id) else { throw CancellationError() }
                     if !self.approvals.contains(where: { $0.samePermission(as: approval) }) { self.approvals.append(approval) }
                     if !self.selected.contains(approval.id) { try self.select(approval, enabled: true, start: self.sharingStarted) }
                 }, status: { [weak self] id, text in
                     if let id { self?.senderStatus[id] = text } else { self?.sharingStatus = text }
                 })
-            } catch { sharing = false; sharingReady = false; throw error }
+            } catch { sharing = false; throw error }
             idleTimer(); return
         }
         #endif
@@ -106,7 +106,7 @@ final class NearbySharing: ObservableObject {
         #if os(iOS)
         if #available(iOS 26.0, *) { _ = aware.stopSharing() }
         #endif
-        sharing = false; sharingReady = false; selected = []; since = [:]; senderStatus = [:]
+        sharing = false; sharingError = nil; selected = []; since = [:]; senderStatus = [:]
         UserDefaults.standard.removeObject(forKey: selectionKey); idleTimer()
     }
     #if os(iOS)
@@ -261,7 +261,7 @@ final class NearbySharing: ObservableObject {
         #if os(iOS)
         if #available(iOS 26.0, *), let radio = radio as? WiFiAwareRadio { connections = radio.stop() }
         #endif
-        resolveConsent(false); sharing = false; sharingReady = false
+        resolveConsent(false); sharing = false; sharingError = nil
         let pending = tasks + connections; tasks.removeAll()
         pending.forEach { $0.cancel() }
         // Receive is an explicit foreground mode; reopening returns to the camera.

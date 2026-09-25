@@ -56,7 +56,13 @@ private struct NearbyControls: View {
                         catch { self.error = error.localizedDescription }
                     }.disabled(!ready)
                     if nearby.sharing {
-                        if !nearby.sharingStatus.isEmpty { Text(nearby.sharingStatus).font(.caption).foregroundStyle(.secondary) }
+                        if let error = nearby.sharingError {
+                            Text(error).font(.caption).foregroundStyle(.secondary)
+                            Button("Try again") {
+                                do { try nearby.startSharing(start: model.recording ? model.recordingStarted : Date()) }
+                                catch { self.error = error.localizedDescription }
+                            }
+                        } else if !nearby.sharingStatus.isEmpty { Text(nearby.sharingStatus).font(.caption).foregroundStyle(.secondary) }
                         Button("Stop sharing", role: .destructive) { nearby.stopSharing() }
                     } else {
                         Button("Join nearby", systemImage: "person.2") { joining = true }
@@ -103,10 +109,7 @@ private struct NearbyControls: View {
         }
         .sheet(isPresented: $pairing) {
             NavigationStack {
-                Group {
-                    if nearby.sharingReady { NativePairingView() }
-                    else { ProgressView(nearby.sharingStatus.isEmpty ? "Starting Nearby" : nearby.sharingStatus) }
-                }
+                NativePairingView()
                     .navigationTitle("Share nearby")
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { pairing = false } } }
             }
@@ -137,9 +140,7 @@ private struct NearbyControls: View {
 @available(iOS 26.0, *)
 private struct NativePairingView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> DDDevicePairingViewController {
-        let provider: WAPublisherListener
-        if #available(iOS 26.4, *) { provider = .wifiAware(.addingConnections(from: .userSpecifiedDevices)) }
-        else { provider = .wifiAware(.connecting(to: WAPublishableService.allServices[WiFiAwareRadio.service]!, from: .userSpecifiedDevices)) }
+        let provider: WAPublisherListener = .wifiAware(.connecting(to: WAPublishableService.allServices[WiFiAwareRadio.service]!, from: .userSpecifiedDevices))
         return DDDevicePairingViewController(listenerProvider: provider, access: .permanent)
     }
     func updateUIViewController(_ controller: DDDevicePairingViewController, context: Context) {}
@@ -152,8 +153,10 @@ private struct NativePickerView: UIViewControllerRepresentable {
     final class Coordinator { var task: Task<Void, Never>? }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIViewController(context: Context) -> UIViewController {
-        let provider = WiFiAwareRadio.subscriber
-        guard let picker = DDDevicePickerViewController(browseDescriptor: provider.makeDescriptor(), parameters: provider.configureParameters(.tcp), access: .permanent) else {
+        let provider: WASubscriberBrowser = .wifiAware(.connecting(to: .userSpecifiedDevices, from: WASubscribableService.allServices[WiFiAwareRadio.service]!))
+        let parameters = provider.configureParameters(.tcp)
+        parameters.serviceClass = .interactiveVideo; parameters.wifiAware = .realtime
+        guard let picker = DDDevicePickerViewController(browseDescriptor: provider.makeDescriptor(), parameters: parameters, access: .permanent) else {
             Task { @MainActor in failed("Nearby pairing is unavailable on this phone") }
             return UIViewController()
         }
