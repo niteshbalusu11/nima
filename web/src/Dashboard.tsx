@@ -207,7 +207,7 @@ export default function Dashboard() {
             <p>{selected ? `${selected.kind === 'video' ? 'Video' : 'Photo'} · ${timeLabel(selected.created_at)}` : 'New uploads will appear here.'}</p></div>
           {selected && <div className={`dash-stage-status ${receiving ? 'receiving' : ''}`}><i />
             {selected.kind === 'photo' ? selected.acknowledged_objects ? 'Uploaded' : 'Uploading' :
-              selected.finished ? 'Finished' : receiving ? 'Receiving fragments' : 'Waiting for fragments'}
+              selected.finished ? 'Finished' : receiving ? 'Receiving fragments' : 'No recent uploads'}
           </div>}
         </div>
         <div className="dash-media">

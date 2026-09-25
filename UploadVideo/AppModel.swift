@@ -45,8 +45,12 @@ final class AppModel: ObservableObject {
             let queue = try UploadQueue(budget: budget); self.queue = queue
             camera = Camera(queue: queue, onError: { [weak self] message in
                 Task { @MainActor in
-                    guard let self, self.session != nil || self.scanning else { return }
+                    guard let self, self.active, self.session != nil || self.scanning else { return }
                     self.message = message
+                }
+            }, onReady: { [weak self] in
+                Task { @MainActor in
+                    if self?.message == "Camera interrupted" { self?.message = nil }
                 }
             }, onCode: { [weak self] code in
                 Task { @MainActor in
@@ -197,6 +201,20 @@ final class AppModel: ObservableObject {
         } else { camera?.takePhoto(location: locationEnabled ? location.current : nil) }
     }
     func takePhoto() { if !managingCapture && !captureBlocked && nearby?.receiving == nil { camera?.takePhoto(location: locationEnabled ? location.current : nil) } }
+    func importPhoto(_ original: Data) async throws {
+        guard let session, let queue, !queueFailure else { throw APIError(status: 0, message: "Could not import photo") }
+        let jpeg = try await Task.detached(priority: .utility) { try ImportedPhotoEncoder.jpeg(original) }.value
+        try queue.enqueue(jpeg, accountId: session.accountId, captureId: UUID().uuidString.lowercased(),
+                          captureKind: "photo", sequence: 0, kind: "photo", imported: true)
+        refreshCaptures()
+    }
+    func importVideo(_ url: URL) async throws {
+        guard let session, let queue, !queueFailure else { throw APIError(status: 0, message: "Could not import video") }
+        try await Task.detached(priority: .utility) {
+            try await ImportedVideoEncoder.enqueue(url, queue: queue, accountId: session.accountId)
+        }.value
+        refreshCaptures()
+    }
     func reviewCaptures(_ value: Bool) async {
         reviewing = value
         if value { location.stop(); camera?.suspend() }

@@ -40,6 +40,11 @@ struct NearbyMediaCheck {
         let apiA = API(baseURL: config.baseUrl, token: config.sessions[0].token)
         let queue = try UploadQueue(root: config.root.appendingPathComponent("phone-0/PendingMedia"), budget: budgets[0])
         let source = try OwnerMediaRecords(identity: identities[0], peers: peers[0], root: config.root.appendingPathComponent("phone-0/SharedMediaRecords"), budget: budgets[0])
+        let importedId = UUID().uuidString.lowercased()
+        try queue.enqueue(MediaProbe.jpeg(), accountId: peers[0].device.accountId, captureId: importedId, captureKind: "photo", sequence: 0, kind: "photo", imported: true)
+        let reopenedQueue = try UploadQueue(root: config.root.appendingPathComponent("phone-0/PendingMedia"), budget: budgets[0])
+        let imported = try await source.prepare(captureId: importedId, queue: reopenedQueue, approvalIDs: Set(approvals.map(\.id)))
+        try expect(imported == nil, "Library import was broadcast without nearby consent")
         let receiverB = NearbyReceiver(), receiverC = NearbyReceiver(), receiverD = NearbyReceiver()
         let receivers = [receiverB, receiverC, receiverD]
         var ports = [UInt16](repeating: 0, count: 3)

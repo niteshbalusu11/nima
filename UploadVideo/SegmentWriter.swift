@@ -43,9 +43,16 @@ final class SegmentWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendable 
         guard writer.startWriting() else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
         writer.startSession(atSourceTime: .zero)
     }
-    func append(_ sample: CMSampleBuffer, isVideo: Bool) throws {
+    func append(_ sample: CMSampleBuffer, isVideo: Bool, waitUntilReady: Bool = false) throws {
         guard writer.status == .writing else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
         guard let input = isVideo ? video : audio else { return }
+        if waitUntilReady {
+            let deadline = Date().addingTimeInterval(30)
+            while !input.isReadyForMoreMediaData {
+                guard writer.status == .writing, Date() < deadline else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        }
         // Use one origin for both tracks, preserving audio sync and gaps from dropped frames.
         // HLS fragments otherwise retain the device's uptime as their media timeline.
         guard input.isReadyForMoreMediaData, CMSampleBufferGetPresentationTimeStamp(sample) >= sourceStartTime else { return }
@@ -75,6 +82,7 @@ final class SegmentWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendable 
         lock.lock(); defer { lock.unlock() }
         return sequence
     }
+    func cancel() { writer.cancelWriting() }
     func assetWriter(_ writer: AVAssetWriter, didOutputSegmentData segmentData: Data,
                      segmentType: AVAssetSegmentType, segmentReport: AVAssetSegmentReport?) {
         lock.lock(); defer { lock.unlock() }
@@ -82,5 +90,124 @@ final class SegmentWriter: NSObject, AVAssetWriterDelegate, @unchecked Sendable 
         onSegment(segmentData, sequence, segmentType == .initialization ? "init" : "media",
                   track?.duration.seconds ?? 0, track?.earliestPresentationTimeStamp.seconds ?? 0)
         sequence += 1
+    }
+}
+
+private final class ImportSegmentSink: @unchecked Sendable {
+    private let lock = NSLock()
+    private var failure: Error?
+    let queue: UploadQueue
+    let accountId: String
+    let captureId: String
+
+    init(queue: UploadQueue, accountId: String, captureId: String) {
+        self.queue = queue; self.accountId = accountId; self.captureId = captureId
+    }
+
+    func receive(_ data: Data, sequence: Int, kind: String, duration: Double, startTime: Double) {
+        lock.lock(); defer { lock.unlock() }
+        guard failure == nil else { return }
+        do {
+            try queue.enqueue(data, accountId: accountId, captureId: captureId, captureKind: "video",
+                              sequence: sequence, kind: kind, duration: duration, startTime: startTime, imported: true)
+        } catch { failure = error }
+    }
+
+    func check() throws {
+        lock.lock(); defer { lock.unlock() }
+        if let failure { throw failure }
+    }
+}
+
+enum ImportedVideoEncoder {
+    static func enqueue(_ url: URL, queue: UploadQueue, accountId: String) async throws {
+        try queue.checkSpace()
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+            throw APIError(status: 0, message: "Video has no picture")
+        }
+        let duration = try await asset.load(.duration)
+        let naturalSize = try await track.load(.naturalSize)
+        let preferredTransform = try await track.load(.preferredTransform)
+        guard duration.isNumeric, duration.seconds > 0, naturalSize.width > 0, naturalSize.height > 0 else {
+            throw APIError(status: 0, message: "Could not read video")
+        }
+
+        let sourceBounds = CGRect(origin: .zero, size: naturalSize).applying(preferredTransform).standardized
+        let scale = min(720 / sourceBounds.width, 1280 / sourceBounds.height)
+        let fitted = CGSize(width: sourceBounds.width * scale, height: sourceBounds.height * scale)
+        let transform = preferredTransform
+            .concatenating(CGAffineTransform(translationX: -sourceBounds.minX, y: -sourceBounds.minY))
+            .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+            .concatenating(CGAffineTransform(translationX: (720 - fitted.width) / 2, y: (1280 - fitted.height) / 2))
+        let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
+        layer.setTransform(transform, at: .zero)
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: duration)
+        instruction.layerInstructions = [layer]
+        let composition = AVMutableVideoComposition()
+        composition.renderSize = CGSize(width: 720, height: 1280)
+        composition.frameDuration = CMTime(value: 1, timescale: 30)
+        composition.instructions = [instruction]
+
+        let reader = try AVAssetReader(asset: asset)
+        let videoOutput = AVAssetReaderVideoCompositionOutput(videoTracks: [track], videoSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
+        ])
+        videoOutput.videoComposition = composition
+        reader.add(videoOutput)
+        let audioTrack = try await asset.loadTracks(withMediaType: .audio).first
+        let audioOutput = audioTrack.map { track in
+            AVAssetReaderTrackOutput(track: track, outputSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsNonInterleaved: false
+            ])
+        }
+        if let audioOutput { reader.add(audioOutput) }
+        guard reader.startReading() else { throw reader.error ?? CocoaError(.fileReadCorruptFile) }
+
+        let captureId = UUID().uuidString.lowercased()
+        let sink = ImportSegmentSink(queue: queue, accountId: accountId, captureId: captureId)
+        let writer: SegmentWriter
+        do {
+            writer = try SegmentWriter(startTime: .zero, includeAudio: audioOutput != nil) { data, sequence, kind, duration, startTime in
+                sink.receive(data, sequence: sequence, kind: kind, duration: duration, startTime: startTime)
+            }
+        } catch { reader.cancelReading(); throw error }
+        do {
+            var videoSample = videoOutput.copyNextSampleBuffer()
+            var audioSample = audioOutput?.copyNextSampleBuffer()
+            guard videoSample != nil else { throw APIError(status: 0, message: "Video has no frames") }
+            while videoSample != nil || audioSample != nil {
+                try Task.checkCancellation()
+                try sink.check()
+                let takeVideo = audioSample == nil || (videoSample != nil &&
+                    CMSampleBufferGetPresentationTimeStamp(videoSample!) <= CMSampleBufferGetPresentationTimeStamp(audioSample!))
+                if takeVideo, let sample = videoSample {
+                    try writer.append(sample, isVideo: true, waitUntilReady: true)
+                    videoSample = videoOutput.copyNextSampleBuffer()
+                } else if let sample = audioSample {
+                    try writer.append(sample, isVideo: false, waitUntilReady: true)
+                    audioSample = audioOutput?.copyNextSampleBuffer()
+                }
+            }
+            guard reader.status == .completed else { throw reader.error ?? CocoaError(.fileReadCorruptFile) }
+            let finished = await withCheckedContinuation { continuation in
+                writer.finish { continuation.resume(returning: $0) }
+            }
+            guard finished else { throw APIError(status: 0, message: "Could not convert video") }
+            try sink.check()
+            guard (try? queue.videoParts(accountId: accountId, captureId: captureId)) != nil else {
+                throw APIError(status: 0, message: "Could not convert video")
+            }
+        } catch {
+            reader.cancelReading()
+            writer.cancel()
+            try? queue.remove(accountId: accountId, captureId: captureId)
+            throw error
+        }
     }
 }

@@ -13,6 +13,8 @@
 !web/vite.config.ts
 !web/src/
 !web/src/**
+!web/tests/
+!web/tests/**
 web/node_modules/
 web/dist/
 web/tsconfig.tsbuildinfo

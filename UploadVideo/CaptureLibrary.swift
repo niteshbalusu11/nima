@@ -67,3 +67,21 @@ actor CaptureLibrary {
         catch { videos[key] = nil; throw error }
     }
 }
+
+enum ImportedPhotoEncoder {
+    static func jpeg(_ original: Data) throws -> Data {
+        guard let source = CGImageSourceCreateWithData(original as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 2048
+              ] as CFDictionary) else { throw APIError(status: 0, message: "Could not read photo") }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else {
+            throw APIError(status: 0, message: "Could not convert photo")
+        }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.78] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw APIError(status: 0, message: "Could not convert photo") }
+        return data as Data
+    }
+}

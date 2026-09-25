@@ -50,6 +50,9 @@ actor OwnerMediaRecords {
         guard approvals.count == approvalIDs.count else { throw MediaRecords.failure("Recipient is no longer approved") }
         let items = queue.retainedObjects(accountId: device.accountId, captureId: captureId)
         guard let first = items.first else { states[captureId] = nil; return nil }
+        // A library import is an explicit cloud action, not consent to broadcast
+        // existing media to nearby people while the camera sharing toggle is on.
+        guard !items.contains(where: { $0.imported == true }) else { return nil }
         guard items.count <= MediaRecords.maxSequence + 1, items.enumerated().allSatisfy({ $0.offset == $0.element.sequence }),
               items.allSatisfy({ $0.captureKind == first.captureKind }),
               let kind: MediaRecords.CaptureKind = first.captureKind == "video" ? .video : (first.captureKind == "photo" ? .photo : nil),

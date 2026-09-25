@@ -43,6 +43,7 @@ struct QueuedObject: Codable, Sendable, Identifiable {
     let location: CaptureLocation?
     var acknowledged: Bool
     var terminal: CaptureTerminal? = nil
+    var imported: Bool? = nil
     var reservation: Data {
         get throws {
             struct Body: Encodable {
@@ -104,7 +105,7 @@ final class UploadQueue: @unchecked Sendable {
     }
     func enqueue(_ data: Data, accountId: String, captureId: String, captureKind: String,
                  sequence: Int, kind: String, duration: Double = 0, startTime: Double = 0,
-                 location: CaptureLocation? = nil) throws {
+                 location: CaptureLocation? = nil, imported: Bool = false) throws {
         lock.lock(); defer { lock.unlock() }
         guard !deleted.contains("\(accountId)/\(captureId)") else { throw APIError(status: 410, message: "Capture deleted") }
         guard !items.contains(where: { $0.accountId == accountId && $0.captureId == captureId && $0.terminal != nil }) else {
@@ -117,7 +118,7 @@ final class UploadQueue: @unchecked Sendable {
                                 sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
                                 md5: Data(Insecure.MD5.hash(data: data)).base64EncodedString(), size: data.count,
                                 duration: duration.isFinite ? duration : 0, startTime: startTime.isFinite ? max(0, startTime) : 0,
-                                createdAt: Date(), location: location, acknowledged: false)
+                                createdAt: Date(), location: location, acknowledged: false, imported: imported ? true : nil)
         let staging = root.appendingPathComponent(".tmp-\(item.id.uuidString)")
         defer { try? budget?.finish(reservation, paths: [staging, folder(item)]) }
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)

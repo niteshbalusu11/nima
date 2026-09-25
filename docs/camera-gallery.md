@@ -2,6 +2,8 @@
 
 The bottom-left thumbnail opens Recents. Tap a photo to view it or a video to play it. The gallery uses this phone's retained media for the signed-in account and works offline. It requires no Photos read permission.
 
+Tap **Import** in Recents to choose photos and videos from iPhone Photos. Selected items are copied into the same durable upload queue as camera captures, so they show Pending/Uploaded status and can finish uploading after a reconnect. The Photos picker does not grant the app broad library access. Imported photos are resized to a maximum 2048-pixel edge and encoded as JPEG; imported videos are fitted into a 720×1280 H.264/AAC stream at 30 fps and about 1.5 Mbps. Originals remain in Photos. Location and other source metadata are not attached to imported captures.
+
 Each capture shows **Pending** until every local upload object has been acknowledged after server verification, then **Uploaded**. Status updates while the gallery is open and persists across app launches. These badges describe uploads, independently of saving to the system Photos library.
 
 A photo triggers a brief dark shutter animation and a light system haptic when AVFoundation reports that it captured the photo. The hardware flash is explicitly off. During video recording the photo button is on the right; the gallery remains visible on the left but opens only after recording finishes. Viewing the gallery suspends the camera while uploads continue.
