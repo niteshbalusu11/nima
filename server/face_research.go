@@ -14,23 +14,24 @@ import (
 
 const maxFacePeople = 20
 
-// Named results remain off until consented recordings establish and validate
-// version-specific acceptance and ambiguity values. The pure selector below is
-// tested independently; integration must not invent a release threshold.
+// Named results remain off unless a consented study is explicitly enabled.
+// The pure selector below is tested independently.
 var faceResearchCalibration = struct {
 	threshold, margin float64
 	calibrated        bool
 }{}
 
-// These values are for the consented local study only. They were frozen from
-// the first uploaded video and must not enable matching on a deployed server.
-// A separate recording is evaluated before the trial switch is used.
-const localFaceThreshold = 0.30
-const localFaceMargin = 0.05
+// These values are for the consented research pilot only. They were frozen
+// from the first uploaded video and checked against a separate recording.
+const pilotFaceThreshold = 0.30
+const pilotFaceMargin = 0.05
 
 func faceResearchThresholds() (threshold, margin float64, calibrated bool) {
 	if os.Getenv("APP_ENV") == "development" && os.Getenv("FACE_RESEARCH_LOCAL_TRIAL") == "1" {
-		return localFaceThreshold, localFaceMargin, true
+		return pilotFaceThreshold, pilotFaceMargin, true
+	}
+	if os.Getenv("APP_ENV") == "production" && os.Getenv("FACE_RESEARCH_PRODUCTION_PILOT") == "1" && researchAccountID() != "" {
+		return pilotFaceThreshold, pilotFaceMargin, true
 	}
 	return faceResearchCalibration.threshold, faceResearchCalibration.margin, faceResearchCalibration.calibrated
 }

@@ -81,9 +81,20 @@ func TestLocalFaceTrialCannotEnableProduction(t *testing.T) {
 	}{}
 	defer func() { faceResearchCalibration = previous }()
 	t.Setenv("FACE_RESEARCH_LOCAL_TRIAL", "1")
+	t.Setenv("FACE_RESEARCH_PRODUCTION_PILOT", "")
+	t.Setenv("FACE_RESEARCH_ACCOUNT_ID", "research-account")
 	t.Setenv("APP_ENV", "production")
 	if calibratedFaceResearch() {
 		t.Fatal("local trial enabled matching in production")
+	}
+	t.Setenv("FACE_RESEARCH_PRODUCTION_PILOT", "1")
+	t.Setenv("FACE_RESEARCH_ACCOUNT_ID", "")
+	if calibratedFaceResearch() {
+		t.Fatal("production pilot enabled matching without a research account")
+	}
+	t.Setenv("FACE_RESEARCH_ACCOUNT_ID", "research-account")
+	if !calibratedFaceResearch() {
+		t.Fatal("production pilot did not enable matching for its research account")
 	}
 	t.Setenv("APP_ENV", "development")
 	if !calibratedFaceResearch() {
@@ -91,7 +102,7 @@ func TestLocalFaceTrialCannotEnableProduction(t *testing.T) {
 	}
 	t.Setenv("FACE_RESEARCH_LOCAL_TRIAL", "")
 	if calibratedFaceResearch() {
-		t.Fatal("matching stayed enabled after clearing the trial switch")
+		t.Fatal("production pilot enabled matching in development")
 	}
 }
 
