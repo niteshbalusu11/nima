@@ -524,12 +524,12 @@ func TestRelayRecorderQuotaAndMigration(t *testing.T) {
 	if result["code"] != "account_quota" {
 		t.Fatal("wrong quota account")
 	}
-	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "v5.sqlite"))
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "v6.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if err = migrate(db, migrations[:5]); err != nil {
+	if err = migrate(db, migrations[:6]); err != nil {
 		t.Fatal(err)
 	}
 	execTest(t, db, "INSERT INTO accounts(id,created_at) VALUES('owner',1)")

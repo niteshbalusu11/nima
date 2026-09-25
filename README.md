@@ -45,6 +45,7 @@ For an iPhone on the same Wi-Fi:
 
 1. In `server/.env`, set `LISTEN_ADDR=0.0.0.0:8080`, `STORAGE_BIND_IP=0.0.0.0`, and `S3_ENDPOINT=http://YOUR_MAC_LAN_IP:9000`. Restart `start-local.sh`. The signed storage URL **must be reachable by the phone**; localhost would point to the phone itself.
    If the server uses a different address to reach storage, keep that address in `S3_ENDPOINT` and set `S3_PUBLIC_ENDPOINT` to the phone-reachable address. The server signs upload and download URLs with `S3_PUBLIC_ENDPOINT`.
+   When the Mac browser needs a different storage address for the local dashboard, set `S3_DASHBOARD_ENDPOINT=http://127.0.0.1:9000`. Dashboard media URLs use this address; phone uploads continue to use `S3_PUBLIC_ENDPOINT`.
 2. Copy `UploadVideo/Configuration/Local.xcconfig.example` to `Local.xcconfig` in the same directory. Set `API_BASE_URL` to the Mac's LAN address, preserving the example's Xcode slash syntax.
 3. Run the Debug build with the configured ProData signing team and scan the QR. Use a trusted local network for this HTTP development setup. `Local.xcconfig` only affects Debug; Release always defaults to the deployed HTTPS API.
 

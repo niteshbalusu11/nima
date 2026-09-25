@@ -45,6 +45,16 @@ ALTER TABLE accounts ADD COLUMN super_admin INTEGER NOT NULL DEFAULT 0 CHECK(sup
 ALTER TABLE invites ADD COLUMN super_admin INTEGER NOT NULL DEFAULT 0 CHECK(super_admin IN (0,1));
 `,
 	`
+CREATE TABLE face_jobs (
+ capture_id TEXT NOT NULL REFERENCES captures(id), sequence INTEGER NOT NULL,
+ processed_at INTEGER NOT NULL, PRIMARY KEY(capture_id, sequence));
+CREATE TABLE face_groups (
+ id TEXT PRIMARY KEY, capture_id TEXT NOT NULL REFERENCES captures(id),
+ embedding TEXT NOT NULL, jpeg BLOB NOT NULL, first_seen_ms INTEGER NOT NULL,
+ sightings INTEGER NOT NULL DEFAULT 1);
+CREATE INDEX face_groups_capture ON face_groups(capture_id, first_seen_ms);
+`,
+	`
 CREATE TABLE devices (
  id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
  signing_public_key TEXT NOT NULL UNIQUE, tls_public_key TEXT NOT NULL UNIQUE,

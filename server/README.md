@@ -37,7 +37,7 @@ The app runs the numbered SQL migrations in `migrations.go` before starting the 
 
 Migration 1 is the current schema, including admin/member roles, and adopts the existing prerelease database. For future schema changes, append a migration, add an upgrade test with existing data, and push to `master`. Never edit or reorder an applied migration. Repeated startup is safe; no Fly SQL commands, reset, or separate release-command Machine is needed. Take a backup before destructive schema changes. Deploy an older binary only if it supports the database version; otherwise fix forward through CI.
 
-Configuration lives in [fly.toml](fly.toml): `ewr`, 1 shared CPU, 512 MB memory, a 1 GB volume at `/data`, HTTPS, and `/health` checks. Keep **one Machine**; `--ha=false` prevents an automatic spare. A deploy or restart briefly interrupts the API; the phone's upload queue retries.
+Configuration lives in [fly.toml](fly.toml): `ewr`, 1 shared CPU, 1 GB memory, a 1 GB volume at `/data`, HTTPS, and `/health` checks. Keep **one Machine**; `--ha=false` prevents an automatic spare. A deploy or restart briefly interrupts the API; the phone's upload queue retries.
 
 Tigris credentials are Fly secrets, set automatically by `fly storage create -a upload-video-api`. The server reads `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and `BUCKET_NAME`. Nothing secret goes into the app or `fly.toml`. The bucket is private, with two-minute signed URLs. Existing `S3_*` variables still work for local RustFS.
 
@@ -75,6 +75,14 @@ Download the text file privately, then enter its one-time code at `https://uploa
 
 The dashboard opens videos from the beginning and keeps appending verified MP4 fragments as they upload. **Jump to latest** joins the latest six fragments for live viewing, typically a few seconds behind the phone. **Play from start** restarts the recording, including portions no longer buffered. Replay buffers about 30 seconds ahead and releases older played footage to bound memory use. The player's fragment count measures fragments loaded during the current playback; the count below the player measures uploads verified by the server. The native iPhone app does not yet call `/finish`, so idle videos show **No recent uploads**; this does not imply missing fragments. The “finished” label is available for browser recordings that send `/finish`.
 
+### Face gallery
+
+A single background worker processes verified photos and one of every three video media fragments. It joins each selected fragment with its initialization segment, extracts one frame, detects faces with OpenCV YuNet, and groups likely matches within that capture using OpenCV SFace. The dashboard shows one 160-pixel crop per group, the sampled timestamp, and a sighting count. A group is an estimate, not a verified identity; video frames between samples can be missed. Processing never changes the uploaded original.
+
+The worker resumes unfinished jobs after restart. Up to 128 groups are stored per capture in the private SQLite database on `/data`; backups include these crops and face embeddings. The gallery and crop endpoints require super-admin access, and deleting a capture removes its groups and embeddings in the same database transaction. The model files are pinned by SHA-256 during the container build. [YuNet license](https://github.com/opencv/opencv_zoo/blob/main/models/face_detection_yunet/README.md), [SFace license](https://github.com/opencv/opencv_zoo/blob/main/models/face_recognition_sface/README.md).
+
+Local development starts the face worker only when `FACE_MODEL_DIR` points to a directory containing both ONNX files and `opencv-python-headless` is installed. Set `FACE_PYTHON` to the Python executable in a virtual environment if needed. The production container includes these dependencies.
+
 `--account` binds a fresh invite to an existing active account, useful for a replacement phone or retrieval helper. It preserves the account role and cannot be combined with `--admin`. The admin-only `revoke` command remains available if explicitly needed; nothing invokes it automatically. Account revocation blocks all its sessions; previously issued storage URLs expire within two minutes.
 
 ## Retrieve media
@@ -107,12 +115,12 @@ Protect backups as user data. They contain account/media metadata, not the media
 
 ## API
 
-The nearby-sharing foundation adds device registration and directional peer consent. See [the protocol and verification guide](../docs/nearby-identities.md) for migration 5, session compatibility, and sharing-only revocation semantics. Migration 6 adds [signed delegated upload routes](../docs/relay-api.md), disabled by default. `NEARBY_RELAY_ENABLED=true` enables these routes for a validated environment; actual Tigris integrity/concurrency checks and physical-device acceptance remain release gates. No production setting has been changed.
+The nearby-sharing foundation adds device registration and directional peer consent. See [the protocol and verification guide](../docs/nearby-identities.md) for migration 6, session compatibility, and sharing-only revocation semantics. Migration 7 adds [signed delegated upload routes](../docs/relay-api.md), disabled by default. `NEARBY_RELAY_ENABLED=true` enables these routes for a validated environment; actual Tigris integrity/concurrency checks and physical-device acceptance remain release gates. No production setting has been changed.
 
 - Public: `GET /health`, `POST /enroll`.
 - Authenticated: `GET/PATCH /me`, `PUT /captures/{id}`, `POST /captures/{id}/objects/reserve`, `POST /captures/{id}/objects/ack`, `GET /captures`, `GET /captures/{id}`, `DELETE /captures/{id}`.
 - Admin only: `POST /invites` with `{}`; returns `{token, expires_at}`. Clients cannot choose role, account, or expiry. Limited to ten creations per admin per minute, with no total allowance.
-- Super admin only: `GET /super-admin/captures` lists the latest 40 captures across accounts; `GET /super-admin/captures/{id}` returns verified fragments and short-lived download URLs. Use `?tail=1` to join a video near its latest fragment, then `?after=SEQUENCE` for new fragments.
+- Super admin only: `GET /super-admin/captures` lists the latest 40 captures across accounts; `GET /super-admin/captures/{id}` returns verified fragments and short-lived download URLs. Use `?tail=1` to join a video near its latest fragment, then `?after=SEQUENCE` for new fragments. `GET /super-admin/captures/{id}/faces` lists face groups; `GET /super-admin/captures/{id}/faces/{face}` returns a private JPEG crop.
 - Optional: `POST /captures/{id}/finish`; retrieval does not depend on it.
 
 `PUT /captures/{id}` accepts an optional `location` object with `latitude`, `longitude`, `horizontal_accuracy_m`, and Unix `timestamp`. The location is fixed for that capture, returned by the owner's capture list and detail endpoints, and cleared on deletion. Older clients may omit it.

@@ -98,11 +98,14 @@ func TestDeviceMigrationPreservesLegacySessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if err := migrate(db, migrations[:4]); err != nil {
+	if err := migrate(db, migrations[:5]); err != nil {
 		t.Fatal(err)
 	}
 	execTest(t, db, "INSERT INTO accounts(id,role,super_admin,created_at) VALUES('owner','admin',1,1)")
 	execTest(t, db, "INSERT INTO sessions(hash,account_id) VALUES('legacy','owner')")
+	execTest(t, db, "INSERT INTO captures(id,account_id,kind,created_at) VALUES('existing-photo','owner','photo',1)")
+	execTest(t, db, "INSERT INTO face_jobs(capture_id,sequence,processed_at) VALUES('existing-photo',0,2)")
+	execTest(t, db, "INSERT INTO face_groups(id,capture_id,embedding,jpeg,first_seen_ms,sightings) VALUES('face','existing-photo','[1]',?,3,4)", []byte("saved-preview"))
 	if err := migrate(db, migrations); err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +117,11 @@ func TestDeviceMigrationPreservesLegacySessions(t *testing.T) {
 	}
 	if deviceID.Valid || revoked != 0 || role != "admin" || super != 1 {
 		t.Fatal("migration changed legacy authorization")
+	}
+	var preview []byte
+	var sightings, processed int
+	if err := db.QueryRow("SELECT jpeg,sightings,processed_at FROM face_groups g JOIN face_jobs j ON j.capture_id=g.capture_id WHERE g.id='face'").Scan(&preview, &sightings, &processed); err != nil || string(preview) != "saved-preview" || sightings != 4 || processed != 2 {
+		t.Fatal("nearby migrations changed existing face gallery", err)
 	}
 }
 

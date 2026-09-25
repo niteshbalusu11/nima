@@ -2,7 +2,7 @@
 
 The backend portion of the nearby sharing plan is implemented behind `NEARBY_RELAY_ENABLED=true`. The default is disabled. No deployment or production configuration has been changed. Actual Tigris checksum/concurrency verification and physical-device acceptance remain release gates; RustFS tests alone do not authorize enabling a pilot.
 
-Migration 6 adds `shared_captures`, `shared_object_records`, `relay_grants`, `relay_grant_objects`, and `captures.owner_metadata_pending`. Existing sessions, media objects, ownership, deletion tombstones, and legacy capture behavior remain intact. The existing unique capture/sequence and canonical random object key are shared by owner and recipient uploads. The server preserves the first validated manifest envelope for each relayed object, including when that object was initially uploaded by its owner.
+Migration 7 adds `shared_captures`, `shared_object_records`, `relay_grants`, `relay_grant_objects`, and `captures.owner_metadata_pending`. Existing sessions, media objects, ownership, deletion tombstones, and legacy capture behavior remain intact. The existing unique capture/sequence and canonical random object key are shared by owner and recipient uploads. The server preserves the first validated manifest envelope for each relayed object, including when that object was initially uploaded by its owner.
 
 ## Requests
 

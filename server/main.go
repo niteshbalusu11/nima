@@ -164,6 +164,9 @@ func run() error {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		go app.cleanDeletedCaptures(ctx)
+		if os.Getenv("FACE_MODEL_DIR") != "" {
+			go app.processFaces(ctx)
+		}
 		go func() {
 			<-ctx.Done()
 			deadline, cancel := context.WithTimeout(context.Background(), 10*time.Second)

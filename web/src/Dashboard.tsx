@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, APIError, type Profile, type Session } from './api'
 import LiveVideo from './LiveVideo'
 import VideoThumbnail from './VideoThumbnail'
+import FaceGallery from './FaceGallery'
 
 type Capture = {
   id: string
@@ -219,6 +220,7 @@ export default function Dashboard() {
             : <div className="dash-empty"><span className="dash-empty-ring" /><p>Waiting for photo upload</p></div>)}
         </div>
         {selected && <div className="dash-stage-meta"><span>CAPTURE ID&nbsp; {selected.id.slice(0, 8)}</span><span>{selected.kind === 'video' ? `${Math.max(0, selected.acknowledged_objects - 1)} video fragments uploaded` : 'Photo'}</span><span className="dash-shortcuts">↑ ↓ captures{selected.kind === 'video' ? ' · Space play/pause' : ''}</span></div>}
+        {selected && <FaceGallery key={selected.id} captureId={selected.id} token={session.token} video={selected.kind === 'video'} />}
       </section>
       <aside className="dash-feed" aria-label="Recent captures">
         <div className="dash-feed-head"><div><span className="dash-eyebrow">ACTIVITY</span><h2>Recent captures</h2></div><span>{captures.length}</span></div>

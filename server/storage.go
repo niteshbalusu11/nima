@@ -28,15 +28,18 @@ type objectStore interface {
 	upload(context.Context, object) (signedUpload, error)
 	verify(context.Context, object) (bool, error)
 	download(context.Context, string) (string, error)
+	downloadDashboard(context.Context, string) (string, error)
+	read(context.Context, string) ([]byte, error)
 	remove(context.Context, string) error
 }
 type relayObjectStore interface {
 	uploadRelay(context.Context, object, time.Duration) (signedUpload, error)
 }
 type s3Store struct {
-	client *s3.Client
-	signer *s3.PresignClient
-	bucket string
+	client          *s3.Client
+	signer          *s3.PresignClient
+	dashboardSigner *s3.PresignClient
+	bucket          string
 }
 
 func newS3() (*s3Store, error) {
@@ -61,6 +64,10 @@ func newS3() (*s3Store, error) {
 	if !validS3Endpoint(publicEndpoint) {
 		return nil, errors.New("S3_PUBLIC_ENDPOINT must be HTTPS (HTTP requires APP_ENV=development)")
 	}
+	dashboardEndpoint := env("S3_DASHBOARD_ENDPOINT", publicEndpoint)
+	if !validS3Endpoint(dashboardEndpoint) {
+		return nil, errors.New("S3_DASHBOARD_ENDPOINT must be HTTPS (HTTP requires APP_ENV=development)")
+	}
 	options := s3.Options{
 		Region: env("S3_REGION", env("AWS_REGION", "auto")), BaseEndpoint: aws.String(endpoint), UsePathStyle: os.Getenv("S3_PATH_STYLE") == "true",
 		Credentials:                credentials.NewStaticCredentialsProvider(values["S3_ACCESS_KEY_ID"], values["S3_SECRET_ACCESS_KEY"], ""),
@@ -73,7 +80,12 @@ func newS3() (*s3Store, error) {
 		options.BaseEndpoint = aws.String(publicEndpoint)
 		signerClient = s3.New(options)
 	}
-	return &s3Store{client: client, signer: s3.NewPresignClient(signerClient), bucket: values["S3_BUCKET"]}, nil
+	dashboardClient := signerClient
+	if dashboardEndpoint != publicEndpoint {
+		options.BaseEndpoint = aws.String(dashboardEndpoint)
+		dashboardClient = s3.New(options)
+	}
+	return &s3Store{client: client, signer: s3.NewPresignClient(signerClient), dashboardSigner: s3.NewPresignClient(dashboardClient), bucket: values["S3_BUCKET"]}, nil
 }
 
 func validS3Endpoint(endpoint string) bool {
@@ -144,11 +156,28 @@ func (s *s3Store) verify(ctx context.Context, o object) (bool, error) {
 	return true, nil
 }
 func (s *s3Store) download(ctx context.Context, key string) (string, error) {
-	p, err := s.signer.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)}, func(p *s3.PresignOptions) { p.Expires = 2 * time.Minute })
+	return s.presignDownload(ctx, s.signer, key)
+}
+
+func (s *s3Store) downloadDashboard(ctx context.Context, key string) (string, error) {
+	return s.presignDownload(ctx, s.dashboardSigner, key)
+}
+
+func (s *s3Store) presignDownload(ctx context.Context, signer *s3.PresignClient, key string) (string, error) {
+	p, err := signer.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)}, func(p *s3.PresignOptions) { p.Expires = 2 * time.Minute })
 	if err != nil {
 		return "", err
 	}
 	return p.URL, nil
+}
+
+func (s *s3Store) read(ctx context.Context, key string) ([]byte, error) {
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
+	if err != nil {
+		return nil, err
+	}
+	defer out.Body.Close()
+	return io.ReadAll(io.LimitReader(out.Body, maxObjectSize+1))
 }
 
 func (s *s3Store) remove(ctx context.Context, key string) error {

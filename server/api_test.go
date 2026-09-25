@@ -43,6 +43,14 @@ func (s *memoryStore) verify(_ context.Context, o object) (bool, error) {
 func (s *memoryStore) download(_ context.Context, key string) (string, error) {
 	return "https://example.invalid/" + key, nil
 }
+func (s *memoryStore) downloadDashboard(ctx context.Context, key string) (string, error) {
+	return s.download(ctx, key)
+}
+func (s *memoryStore) read(_ context.Context, key string) ([]byte, error) {
+	s.Lock()
+	defer s.Unlock()
+	return append([]byte(nil), s.data[key]...), nil
+}
 
 func (s *memoryStore) remove(_ context.Context, key string) error {
 	s.Lock()

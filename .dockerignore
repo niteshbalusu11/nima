@@ -1,6 +1,7 @@
 *
 !server/
 !server/*.go
+!server/face_detector.py
 !server/go.mod
 !server/go.sum
 !server/Dockerfile

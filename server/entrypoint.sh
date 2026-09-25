@@ -7,6 +7,6 @@ if [ "$(id -u)" = 0 ]; then
     mkdir -p "$database_dir"
     chown app:app "$database_dir"
     chmod 700 "$database_dir"
-    exec su-exec app:app uploadvideo "$@"
+    exec gosu app:app uploadvideo "$@"
 fi
 exec uploadvideo "$@"

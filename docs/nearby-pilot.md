@@ -13,7 +13,7 @@ Foreground operation is supported. Keep the app open while receiving or uploadin
 
 ## Install and pair two phones
 
-1. Run this branch's Go server against RustFS for the first pilot. Set `NEARBY_RELAY_ENABLED=true` in its environment; the default is **false**. This flag admits delegated cloud requests, not enrollment or ordinary owner uploads. The server applies additive migrations through version 6 at startup.
+1. Run this branch's Go server against RustFS for the first pilot. Set `NEARBY_RELAY_ENABLED=true` in its environment; the default is **false**. This flag admits delegated cloud requests, not enrollment or ordinary owner uploads. The server applies additive migrations through version 7 at startup.
 2. For a local Mac server, edit the private `server/.env`: use `LISTEN_ADDR=0.0.0.0:8080`, `STORAGE_BIND_IP=0.0.0.0`, and `S3_PUBLIC_ENDPOINT=http://YOUR_MAC_LAN_IP:9000`, keeping `S3_ENDPOINT=http://127.0.0.1:9000`. Start with `./tools/start-local.sh`. Both phones must be able to reach the API and the signed storage URL when testing cloud upload.
 3. For Debug builds, put `API_BASE_URL = http:/$()/YOUR_MAC_LAN_IP:8080` in the ignored `UploadVideo/Configuration/Local.xcconfig`. Open `UploadVideo.xcodeproj`, choose the `UploadVideo` scheme, and run on each iPhone using valid development signing. Xcode installation requires Developer Mode. Both builds must use exactly the same API URL.
 4. Enroll each phone with its own app invite from that server. In **Nearby → People**, set up each phone. B uses **Share my contact**; A pastes that contact and creates an invitation. B pastes A's invitation and explicitly allows saving and uploading A's media. Do this while online, before disconnecting the phones.

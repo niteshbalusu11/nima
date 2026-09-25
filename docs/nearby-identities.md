@@ -8,7 +8,7 @@ This implements the identity, directional consent, offline approval cache, and r
 
 The optional `Session.deviceId` preserves decoding of existing sessions. Registration binds only the caller's token; other tokens for that account stay unchanged. A new session for the same account can prove the same keys and recover the same device ID. Keys cannot be claimed by another account, moved between roles, or replaced on a bound session. Revoked keys cannot be registered again.
 
-Migration 5 adds `devices`, nullable `sessions.device_id`, `device_challenges`, `peer_invitations`, and `peer_approvals`. Existing roles, sessions, captures, and objects are preserved. An older server binary refuses the upgraded database; roll forward or restore a compatible backup when rehearsing rollback.
+Migration 6 adds `devices`, nullable `sessions.device_id`, `device_challenges`, `peer_invitations`, and `peer_approvals`. Existing roles, sessions, captures, and objects are preserved. An older server binary refuses the upgraded database; roll forward or restore a compatible backup when rehearsing rollback.
 
 The native entry point is **Profile → Development → Nearby setup** in Debug builds. Point it at the updated local server; this work has not deployed these endpoints. Registration alone does not enable discovery or approve recipients. Setup errors stay on that screen and do not stop the camera or owner uploads. Leaving the screen or making the app inactive cancels its network task. A server commit whose response was lost is recovered on retry.
 
