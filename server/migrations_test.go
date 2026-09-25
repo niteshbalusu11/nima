@@ -151,6 +151,42 @@ func TestResearchMigrationPreservesLegacyAnonymousFaces(t *testing.T) {
 	}
 }
 
+func TestCrossAccountConsentMigrationRequiresReconfirmation(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "research-consent.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := migrate(db, migrations[:9]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO accounts(id,created_at) VALUES('owner',1),('admin',1)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO captures(id,account_id,kind,created_at) VALUES('capture','owner','photo',1)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO face_research_captures(capture_id,confirmed_by,confirmed_at) VALUES('capture','admin',1)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO face_groups(id,capture_id,embedding,jpeg,first_seen_ms) VALUES('group','capture','[]',X'00',0)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO face_people(id,account_id,reference_group_id,display_name,consent_confirmed_by,consent_confirmed_at) VALUES('person','owner','group','Volunteer','admin',1)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db, migrations); err != nil {
+		t.Fatal(err)
+	}
+	var confirmedAt sql.NullInt64
+	if err := db.QueryRow("SELECT cross_account_confirmed_at FROM face_research_captures WHERE capture_id='capture'").Scan(&confirmedAt); err != nil || confirmedAt.Valid {
+		t.Fatalf("legacy opt-in became eligible for cross-account matching: %+v %v", confirmedAt, err)
+	}
+	if err := db.QueryRow("SELECT cross_account_confirmed_at FROM face_people WHERE id='person'").Scan(&confirmedAt); err != nil || confirmedAt.Valid {
+		t.Fatalf("legacy enrollment became eligible for cross-account matching: %+v %v", confirmedAt, err)
+	}
+}
+
 func TestMigrationsUpgradeRollbackAndNewerVersion(t *testing.T) {
 	db, err := openDB(filepath.Join(t.TempDir(), "upgrade.sqlite"))
 	if err != nil {

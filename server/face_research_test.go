@@ -82,19 +82,13 @@ func TestLocalFaceTrialCannotEnableProduction(t *testing.T) {
 	defer func() { faceResearchCalibration = previous }()
 	t.Setenv("FACE_RESEARCH_LOCAL_TRIAL", "1")
 	t.Setenv("FACE_RESEARCH_PRODUCTION_PILOT", "")
-	t.Setenv("FACE_RESEARCH_ACCOUNT_ID", "research-account")
 	t.Setenv("APP_ENV", "production")
 	if calibratedFaceResearch() {
 		t.Fatal("local trial enabled matching in production")
 	}
 	t.Setenv("FACE_RESEARCH_PRODUCTION_PILOT", "1")
-	t.Setenv("FACE_RESEARCH_ACCOUNT_ID", "")
-	if calibratedFaceResearch() {
-		t.Fatal("production pilot enabled matching without a research account")
-	}
-	t.Setenv("FACE_RESEARCH_ACCOUNT_ID", "research-account")
 	if !calibratedFaceResearch() {
-		t.Fatal("production pilot did not enable matching for its research account")
+		t.Fatal("production pilot did not enable matching")
 	}
 	t.Setenv("APP_ENV", "development")
 	if !calibratedFaceResearch() {
@@ -106,12 +100,11 @@ func TestLocalFaceTrialCannotEnableProduction(t *testing.T) {
 	}
 }
 
-func TestResearchConsentScopeAndWithdrawal(t *testing.T) {
+func TestResearchConsentAcrossOwnersAndWithdrawal(t *testing.T) {
 	h := setup(t)
 	ownerToken, owner := enrollTest(t, h)
 	_, other := enrollTest(t, h)
 	admin := researchAdmin(t, h)
-	t.Setenv("FACE_RESEARCH_ACCOUNT_ID", owner)
 	previous := faceResearchCalibration
 	faceResearchCalibration = struct {
 		threshold, margin float64
@@ -135,7 +128,6 @@ func TestResearchConsentScopeAndWithdrawal(t *testing.T) {
 	}
 	optIn(source, ownerToken, true, 403)
 	optIn(source, admin, false, 400)
-	optIn(otherCapture, admin, true, 404)
 	optIn(source, admin, true, 200)
 	optIn(source, admin, true, 200)
 	path := "/super-admin/face-people"
@@ -172,7 +164,42 @@ func TestResearchConsentScopeAndWithdrawal(t *testing.T) {
 	s, body = request(t, h.server.URL, "GET", "/super-admin/captures/"+otherCapture+"/faces", admin, nil)
 	mustStatus(t, 200, s, body)
 	if strings.Contains(string(body), "XYZ") {
-		t.Fatal("other account received a candidate")
+		t.Fatal("unconsented capture owned by another account was named")
+	}
+	optIn(otherCapture, admin, true, 200)
+	s, body = request(t, h.server.URL, "GET", "/super-admin/captures/"+otherCapture+"/faces", admin, nil)
+	mustStatus(t, 200, s, body)
+	if !strings.Contains(string(body), `"state":"possible_match"`) || !strings.Contains(string(body), "XYZ") {
+		t.Fatalf("missing consented cross-account candidate: %s", body)
+	}
+	if _, err := h.db.Exec("UPDATE face_research_captures SET cross_account_confirmed_at=NULL WHERE capture_id=?", source); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.Exec("UPDATE face_people SET cross_account_confirmed_at=NULL WHERE id=?", enrolled.ID); err != nil {
+		t.Fatal(err)
+	}
+	s, body = request(t, h.server.URL, "GET", "/super-admin/captures/"+otherCapture+"/faces", admin, nil)
+	mustStatus(t, 200, s, body)
+	if strings.Contains(string(body), "XYZ") {
+		t.Fatal("legacy source consent was used across accounts")
+	}
+	optIn(source, admin, true, 200)
+	s, body = request(t, h.server.URL, "GET", "/super-admin/captures/"+otherCapture+"/faces", admin, nil)
+	mustStatus(t, 200, s, body)
+	if strings.Contains(string(body), "XYZ") {
+		t.Fatal("legacy enrollment consent was used across accounts")
+	}
+	s, body = request(t, h.server.URL, "DELETE", path+"/"+enrolled.ID, admin, nil)
+	mustStatus(t, 204, s, body)
+	s, body = request(t, h.server.URL, "POST", path, admin, input)
+	mustStatus(t, 201, s, body)
+	if err := json.Unmarshal(body, &enrolled); err != nil || enrolled.ID == "" {
+		t.Fatalf("missing renewed enrollment: %s %v", body, err)
+	}
+	s, body = request(t, h.server.URL, "GET", "/super-admin/captures/"+otherCapture+"/faces", admin, nil)
+	mustStatus(t, 200, s, body)
+	if !strings.Contains(string(body), `"state":"possible_match"`) || !strings.Contains(string(body), "XYZ") {
+		t.Fatalf("renewed consent did not restore matching: %s", body)
 	}
 	s, body = request(t, h.server.URL, "DELETE", path+"/"+enrolled.ID, admin, nil)
 	mustStatus(t, 204, s, body)
@@ -184,7 +211,10 @@ func TestResearchConsentScopeAndWithdrawal(t *testing.T) {
 	input["consent_confirmed"] = true
 	s, body = request(t, h.server.URL, "POST", path, admin, input)
 	mustStatus(t, 201, s, body)
-	t.Setenv("FACE_RESEARCH_ACCOUNT_ID", "")
+	faceResearchCalibration = struct {
+		threshold, margin float64
+		calibrated        bool
+	}{}
 	s, body = request(t, h.server.URL, "GET", "/super-admin/captures/"+target+"/faces", admin, nil)
 	mustStatus(t, 200, s, body)
 	if strings.Contains(string(body), "XYZ") {
@@ -205,7 +235,8 @@ func TestResearchCaptureDeletionCleansEnrollment(t *testing.T) {
 	h := setup(t)
 	ownerToken, owner := enrollTest(t, h)
 	admin := researchAdmin(t, h)
-	t.Setenv("FACE_RESEARCH_ACCOUNT_ID", owner)
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("FACE_RESEARCH_LOCAL_TRIAL", "1")
 	source, group := addResearchFace(t, h, owner, researchVector(1, 0), faceModelVersion)
 	s, body := request(t, h.server.URL, "PUT", "/super-admin/captures/"+source+"/face-research", admin, map[string]bool{"consent_confirmed": true})
 	mustStatus(t, 200, s, body)
@@ -222,4 +253,28 @@ func TestResearchCaptureDeletionCleansEnrollment(t *testing.T) {
 	if err := h.db.QueryRow("SELECT COUNT(*) FROM face_research_captures").Scan(&count); err != nil || count != 0 {
 		t.Fatalf("consent survived deletion: %d %v", count, err)
 	}
+}
+
+func TestResearchEnrollmentLimitIsGlobal(t *testing.T) {
+	h := setup(t)
+	_, firstOwner := enrollTest(t, h)
+	_, secondOwner := enrollTest(t, h)
+	admin := researchAdmin(t, h)
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("FACE_RESEARCH_LOCAL_TRIAL", "1")
+	enroll := func(owner string, expected int) {
+		t.Helper()
+		capture, group := addResearchFace(t, h, owner, researchVector(1, 0), faceModelVersion)
+		s, body := request(t, h.server.URL, "PUT", "/super-admin/captures/"+capture+"/face-research", admin,
+			map[string]bool{"consent_confirmed": true})
+		mustStatus(t, 200, s, body)
+		s, body = request(t, h.server.URL, "POST", "/super-admin/face-people", admin, map[string]any{
+			"capture_id": capture, "face_group_id": group, "display_name": "Volunteer", "consent_confirmed": true,
+		})
+		mustStatus(t, expected, s, body)
+	}
+	for i := 0; i < maxFacePeople; i++ {
+		enroll(firstOwner, 201)
+	}
+	enroll(secondOwner, 409)
 }

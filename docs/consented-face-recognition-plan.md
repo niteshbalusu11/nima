@@ -6,11 +6,11 @@ Status: proposed implementation handoff; no feature code is included. Written Se
 
 An operator selects a consenting participant's face in an earlier recording, labels it “XYZ,” and explicitly enrolls it as a reference. When that participant appears in another opted-in recording, the dashboard can show “Possible match: XYZ.” Unrecognized or ambiguous faces remain unnamed. A reference photo can use the same capture flow.
 
-The first version is a controlled hackathon study: one dedicated invited research account, at most 20 enrolled participants, one manually selected reference per participant, and the existing super-admin dashboard. Every person in research footage must have agreed to cloud upload and face comparison, including volunteers deliberately left unenrolled to test unknown results. Synthetic identities can also exercise the flow; mark their names as demo identities. Do not infer consent from account membership or the fact that a photo is publicly visible. The operator records an attestation; the software does not verify legal consent.
+The first version is a controlled hackathon study: at most 20 enrolled participants across all accounts, one manually selected reference per participant, and the existing super-admin dashboard. Every person in research footage must have agreed to cloud upload and face comparison, including volunteers deliberately left unenrolled to test unknown results. Synthetic identities can also exercise the flow; mark their names as demo identities. Do not infer consent from account membership or the fact that a photo is publicly visible. The operator records an attestation; the software does not verify legal consent.
 
-This scope includes enrollment, cross-capture candidate matching, removing enrollment, and opting recordings out. It excludes offender databases, criminal labels, web scraping, global identity search, automatic enrollment, matching across accounts, and public alerts. Normal iPhone recording and live uploads retain their current flow.
+This scope includes enrollment, candidate matching between explicitly opted-in captures even when their owners differ, removing enrollment, and opting recordings out. It excludes offender databases, criminal labels, web scraping, searching non-opted-in captures, automatic enrollment, and public alerts. Normal iPhone recording and live uploads retain their current flow.
 
-Success means recording B shows a candidate enrolled from recording A while B is still uploading; an unenrolled volunteer stays unknown; disabling consent or deleting the reference stops subsequent candidate results; other accounts expose no research identities.
+Success means recording B shows a candidate enrolled from recording A while B is still uploading, including when A and B have different owners; an unenrolled volunteer stays unknown; disabling consent or deleting the reference stops subsequent candidate results; non-opted-in captures expose no research identities.
 
 ## Existing behavior to preserve
 
@@ -51,13 +51,13 @@ flowchart LR
 
 ### Enablement and consent
 
-Use a server setting `FACE_RESEARCH_ACCOUNT_ID`, empty by default, to select one existing active research account. It is the media owner's account, not the super-admin operator's account. A configured account does not automatically opt in its captures.
+Keep the research pilot switch off by default. When enabled, a super-admin may opt in captures from any active invited account. The switch does not automatically opt in any capture, and no separate research account is required.
 
-For each source and target capture, the operator must explicitly confirm that every visible participant consented to the study and enable research comparison. For a live capture, this confirmation covers the planned recording session; stop or opt out if a nonparticipant enters. No background scan enables old recordings.
+For each source and target capture, the operator must explicitly confirm that every visible participant consented to comparison with other opted-in captures, including those owned by different accounts. For a live capture, this confirmation covers the planned recording session; stop or opt out if a nonparticipant enters. No background scan enables old recordings. Opt-ins and named enrollments recorded under the earlier single-owner scope remain ineligible until fresh confirmation; old named enrollments must be removed and created again.
 
 At enrollment, separately require confirmation that the selected participant agreed to named enrollment and future comparison within this study. Keep signed permissions, if collected, outside the app; store only the operator's account ID and confirmation timestamp. Explain access and retention to participants before recording. A short study notice belongs in the enrollment dialog, not on the camera screen.
 
-Empty configuration pauses all candidate matching and new opt-ins/enrollments; it does not erase recorded consent or enrollment. Removal and opt-out operations remain available so cleanup does not depend on the feature being enabled. Ending a study requires clearing stored capture opt-ins through the management routes, then disabling configuration. A new study must explicitly opt its captures in again.
+Disabling the pilot switch pauses all candidate matching and new opt-ins/enrollments; it does not erase recorded consent or enrollment. Removal and opt-out operations remain available so cleanup does not depend on the feature being enabled. Ending a study requires clearing stored capture opt-ins through the management routes, then disabling configuration. A new study must explicitly opt its captures in again.
 
 ### Storage
 
@@ -66,12 +66,14 @@ Append an additive migration with these changes. Column names below are the prop
 | Change | Fields and constraints |
 | --- | --- |
 | `face_groups.model_version` | Nullable text. Existing rows remain null; new rows receive the server's fixed pipeline version. |
-| `face_research_captures` | `capture_id` primary key referencing captures; `confirmed_by` referencing accounts; `confirmed_at` Unix seconds. Row presence means capture opt-in. |
+| `face_research_captures` | `capture_id` primary key referencing captures; `confirmed_by` referencing accounts; `confirmed_at` Unix seconds. A row with current-scope confirmation means capture opt-in. |
+| `face_research_captures.cross_account_confirmed_at` | Nullable Unix seconds added in migration 10. Old rows remain null and inactive until a super-admin confirms the wider scope. |
+| `face_people.cross_account_confirmed_at` | Nullable Unix seconds added in migration 10. Old references remain null and inactive until removed and re-enrolled with the wider scope confirmed. |
 | `face_people` | `id` primary key; `account_id` referencing the media owner; `reference_group_id` unique and referencing face groups; `display_name`; `consent_confirmed_by` referencing accounts; `consent_confirmed_at` Unix seconds. Index `account_id`. |
 
 Reuse the reference group's existing embedding and JPEG; do not copy either into the person row or create another object-storage dataset. Join through the reference group to its capture to enforce ownership, consent, model version, and deletion checks. `display_name` is an operator-supplied research label, not verified identity. Trim it, require 1–80 Unicode characters, and render it as plain text. IDs determine identity; names need not be globally unique.
 
-Enforce the 20-person limit and duplicate-reference check inside the enrollment write transaction. A repeated enrollment of the same group returns a conflict instead of creating two candidates. To correct a name or replace a poor reference, remove the enrollment and enroll again with confirmation. Multiple templates, merging people, and automatic reference updates are deferred.
+Enforce the global 20-person limit and duplicate-reference check inside the enrollment write transaction. A repeated enrollment of the same group returns a conflict instead of creating two candidates. To correct a name or replace a poor reference, remove the enrollment and enroll again with confirmation. Multiple templates, merging people, and automatic reference updates are deferred.
 
 ### HTTP interface
 
@@ -79,12 +81,12 @@ All routes require a valid session and the current database `super_admin` permis
 
 | Method and route | Contract |
 | --- | --- |
-| `PUT /super-admin/captures/{id}/face-research` | Body `{ "consent_confirmed": true }`. Opt in an existing, undeleted capture owned by the configured active research account. Record operator/time; repeated requests are idempotent. Return 200 with enabled status. |
+| `PUT /super-admin/captures/{id}/face-research` | Body `{ "consent_confirmed": true }`. Opt in an existing, undeleted capture owned by an active account. Record operator/time; repeated requests are idempotent. Return 200 with enabled status. |
 | `DELETE /super-admin/captures/{id}/face-research` | Idempotently opt out and remove any enrollments whose reference belongs to that capture in the same transaction. Return 204. Available for previously opted-in captures even when configuration is disabled. |
 | `POST /super-admin/face-people` | Body `{ "capture_id": "...", "face_group_id": "...", "display_name": "XYZ", "consent_confirmed": true }`. Require a matching group/capture pair, active account, capture opt-in, and the current model version. Return 201 with person ID/name/source IDs. |
 | `GET /super-admin/face-people` | List enrollment metadata for cleanup and management, including source IDs; never return embeddings. Include whether each row is currently eligible. Existing enrollments remain manageable when comparison is disabled. |
 | `DELETE /super-admin/face-people/{id}` | Idempotently remove named enrollment; return 204. Available while comparison is disabled. |
-| Existing `GET /super-admin/captures/{id}/faces` | Preserve existing fields and add capture research status plus each group's recognition result. Evaluate only opted-in captures and eligible references owned by the configured active account. |
+| Existing `GET /super-admin/captures/{id}/faces` | Preserve existing fields and add capture research status plus each group's recognition result. Evaluate only opted-in captures and eligible references, regardless of owner. |
 
 Use 401 for invalid sessions, 403 for insufficient role, 404 for missing/inaccessible capture/group IDs, 400 for malformed bodies or absent/false consent, and 409 for disabled enrollment, ineligible references, duplicate enrollment, or capacity conflicts. Use existing no-store responses. Scope checks apply on every request, including to guessed IDs. Legacy clients can ignore the added response fields.
 
@@ -123,11 +125,11 @@ At demo end, remove enrollments, opt out all research captures, disable configur
 
 ## Implementation sequence and acceptance checks
 
-1. **Schema and enrollment.** Add the next migration, fixed model-version tagging, and management routes. Test fresh/upgrade/repeated migrations; existing anonymous captures survive. Test consent rejection, role checks, account isolation, duplicate enrollment, concurrent cap enforcement, version rejection, opt-out, and cleanup while disabled.
+1. **Schema and enrollment.** Add the next migration, fixed model-version tagging, and management routes. Test fresh/upgrade/repeated migrations; existing anonymous captures survive. Test consent rejection, role checks, cross-account matching only after both captures opt in, duplicate enrollment, concurrent global cap enforcement, version rejection, opt-out, and cleanup while disabled.
 2. **Candidate results.** Add the pure selection function and integrate it into `listFaces` with batched reads. Test exact/different vectors, below-threshold scores, ties, margin boundaries, empty galleries, incompatible versions, zero/nonfinite vectors, and source-capture exclusion. HTTP tests must verify actual scoping, not only call the score helper.
 3. **Dashboard controls.** Implement opt-in, enrollment, participant removal, and result labels. Test pending/error states, explicit consent, safe rendering of names, immediate refresh, stale in-flight responses, failed polling, and permission revocation. Existing anonymous gallery access must still work.
 4. **Lifecycle races.** Test capture deletion racing enrollment and worker completion, reference removal during candidate reads, source opt-out, account revocation, and server restart. A read begun after removal commits must never return the removed identity. Re-enrollment always requires another explicit confirmation.
-5. **Live end-to-end demo.** Create a dedicated invited account; record opted-in reference A; enroll a consenting participant. Record B with that participant and an unenrolled consenting volunteer. Opt B in while it is recording and confirm results appear after acknowledged fragments, before Stop and without `/finish`. Remove the enrollment while B is live and verify subsequent reads stop returning the name. Verify another account cannot participate.
+5. **Live end-to-end demo.** Record opted-in reference A and enroll a consenting participant. Record B under a different account with that participant and an unenrolled consenting volunteer. Opt B in while it is recording and confirm results appear after acknowledged fragments, before Stop and without `/finish`. Remove the enrollment while B is live and verify subsequent reads stop returning the name. Verify a non-opted-in capture remains anonymous.
 
 Use the existing backend tests and web scripts:
 

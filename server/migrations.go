@@ -106,6 +106,10 @@ CREATE TABLE face_people (
  consent_confirmed_at INTEGER NOT NULL);
 CREATE INDEX face_people_account ON face_people(account_id);
 `,
+	`
+ALTER TABLE face_research_captures ADD COLUMN cross_account_confirmed_at INTEGER;
+ALTER TABLE face_people ADD COLUMN cross_account_confirmed_at INTEGER;
+`,
 }
 
 // Run before serving requests. The write lock also serializes startup with CLI commands.
