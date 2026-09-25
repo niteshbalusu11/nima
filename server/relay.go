@@ -390,6 +390,35 @@ type sharedCaptureStatus struct {
 	Complete bool   `json:"cloud_complete"`
 }
 
+func (a *api) relayStatus(w http.ResponseWriter, r *http.Request) {
+	if !a.relayAvailable(w) {
+		return
+	}
+	var input struct{}
+	if !decode(w, r, &input) {
+		return
+	}
+	tx, caller, ok := a.deviceTransaction(w, r, true)
+	if !ok {
+		return
+	}
+	defer tx.Rollback()
+	capture, _, err := loadRelay(tx, caller, r.PathValue("id"))
+	if err != nil {
+		mediaFailure(w, err)
+		return
+	}
+	status, err := sharedStatus(tx, capture.Descriptor.CaptureID)
+	if err == nil {
+		err = tx.Commit()
+	}
+	if err != nil {
+		mediaFailure(w, err)
+		return
+	}
+	jsonResponse(w, 200, status)
+}
+
 func sharedStatus(tx *sql.Tx, id string) (*sharedCaptureStatus, error) {
 	capture, signed, err := loadSharedCapture(tx, id)
 	if errors.Is(err, sql.ErrNoRows) {

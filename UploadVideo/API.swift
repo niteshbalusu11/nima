@@ -29,6 +29,7 @@ enum InviteToken {
 struct APIError: Error, LocalizedError {
     let status: Int
     let message: String
+    var code: String? = nil
     var errorDescription: String? { message }
 }
 struct API: Sendable {
@@ -62,8 +63,8 @@ struct API: Sendable {
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard (200..<300).contains(http.statusCode) else {
-            let message = (try? JSONDecoder().decode(ServerError.self, from: data).error) ?? "Try again"
-            throw APIError(status: http.statusCode, message: message)
+            let failure = try? JSONDecoder().decode(ServerError.self, from: data)
+            throw APIError(status: http.statusCode, message: failure?.error ?? "Try again", code: failure?.code)
         }
         return try Self.decoder.decode(Response.self, from: data)
     }
@@ -73,7 +74,7 @@ struct API: Sendable {
     static func encode<T: Encodable>(_ value: T) throws -> Data {
         let encoder = JSONEncoder(); encoder.keyEncodingStrategy = .convertToSnakeCase; return try encoder.encode(value)
     }
-    private struct ServerError: Decodable { let error: String }
+    private struct ServerError: Decodable { let error: String; let code: String? }
 }
 struct OK: Decodable, Sendable { let ok: Bool }
 

@@ -136,6 +136,7 @@ func (a *api) handler() http.Handler {
 	protected.HandleFunc("POST /relay-grants/{id}/objects/reserve", a.reserveRelay)
 	protected.HandleFunc("POST /relay-grants/{id}/objects/ack", a.ackRelay)
 	protected.HandleFunc("POST /relay-grants/{id}/completion", a.completeRelay)
+	protected.HandleFunc("POST /relay-grants/{id}/status", a.relayStatus)
 	protected.HandleFunc("POST /captures/{id}/completion", a.completeOwner)
 	protected.HandleFunc("PUT /captures/{id}", a.createCapture)
 	protected.HandleFunc("POST /captures/{id}/objects/reserve", a.reserve)

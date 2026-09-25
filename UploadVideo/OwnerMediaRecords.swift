@@ -25,10 +25,12 @@ actor OwnerMediaRecords {
     private let peers: PeerStore
     private let device: RegisteredDevice
     private let root: URL
+    private let budget: MediaStorageBudget?
     private var states: [String: State] = [:]
     private var healthy = true
 
-    init(identity: DeviceIdentity, peers: PeerStore, root: URL? = nil) throws {
+    init(identity: DeviceIdentity, peers: PeerStore, root: URL? = nil, budget: MediaStorageBudget? = nil) throws {
+        self.budget = budget
         guard identity.matches(peers.device) else { throw MediaRecords.failure("Sharing keys belong to another device") }
         self.identity = identity; self.peers = peers; device = peers.device
         let directory = try root ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
@@ -151,6 +153,7 @@ actor OwnerMediaRecords {
         let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
         guard files.count <= MediaRecords.maxSequence + 4099 else { throw MediaRecords.failure("Too many saved records") }
         for file in files where file.lastPathComponent.hasPrefix(".tmp-") { try FileManager.default.removeItem(at: file) }
+        try budget?.reconcile(folder)
         let descriptorFile = folder.appendingPathComponent("descriptor.json")
         let envelope: MediaRecords.Envelope
         if FileManager.default.fileExists(atPath: descriptorFile.path) { envelope = try read(descriptorFile) }
@@ -183,6 +186,14 @@ actor OwnerMediaRecords {
         guard state.grants.count <= 4096 else { throw MediaRecords.failure("Too many saved permissions") }
         return state
     }
+    // Called only after nearby workers stop and the owner queue records deletion.
+    func remove(captureId: String) throws {
+        guard UUID(uuidString: captureId)?.uuidString.lowercased() == captureId else { throw MediaRecords.failure("Invalid capture") }
+        let folder = root.appendingPathComponent(captureId)
+        if FileManager.default.fileExists(atPath: folder.path) { try FileManager.default.removeItem(at: folder) }
+        states[captureId] = nil
+        try budget?.reconcile(folder)
+    }
     private func read(_ url: URL) throws -> MediaRecords.Envelope {
         let file = try FileHandle(forReadingFrom: url); defer { try? file.close() }
         let bytes = try file.read(upToCount: 2049) ?? Data()
@@ -192,12 +203,15 @@ actor OwnerMediaRecords {
     private func save(_ envelope: MediaRecords.Envelope, name: String, captureId: String) throws {
         let folder = root.appendingPathComponent(captureId, isDirectory: true)
         let temporary = folder.appendingPathComponent(".tmp-" + UUID().uuidString)
+        let destination = folder.appendingPathComponent(name + ".json")
+        let reservation = try budget?.reserve(2048, area: .owner)
+        defer { try? budget?.finish(reservation, paths: [temporary, destination]) }
         defer { try? FileManager.default.removeItem(at: temporary) }
         do {
             try JSONEncoder().encode(envelope).write(to: temporary, options: [.completeFileProtection])
             let file = try FileHandle(forWritingTo: temporary)
             do { try file.synchronize(); try file.close() } catch { try? file.close(); throw error }
-            try FileManager.default.moveItem(at: temporary, to: folder.appendingPathComponent(name + ".json"))
+            try FileManager.default.moveItem(at: temporary, to: destination)
             try syncDirectory(folder)
         } catch {
             // Reopen and read the first persisted signature after any uncertain write.

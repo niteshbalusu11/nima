@@ -34,6 +34,13 @@ struct GalleryView: View {
                 if model.captures.isEmpty { ContentUnavailableView("No captures", systemImage: "photo.on.rectangle") }
             }
             .interactiveDismissDisabled(model.managingCapture)
+            .safeAreaInset(edge: .bottom) {
+                if let nearby = model.nearby {
+                    NavigationLink { ReceivedCopiesView(nearby: nearby) } label: {
+                        Label("Received", systemImage: "antenna.radiowaves.left.and.right").padding()
+                    }.frame(maxWidth: .infinity).background(.ultraThinMaterial)
+                }
+            }
             .navigationTitle("Recents").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(model.managingCapture) } }
         }

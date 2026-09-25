@@ -8,6 +8,9 @@ struct PeerApproval: Codable, Sendable, Identifiable, Equatable {
     let createdAt: Int64
     let senderName: String
     let recipientName: String
+    func samePermission(as other: PeerApproval) -> Bool {
+        id == other.id && sender == other.sender && recipient == other.recipient
+    }
 }
 struct PeerInvitation: Decodable, Sendable {
     let token: String

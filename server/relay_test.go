@@ -497,6 +497,21 @@ func TestRelayPhotoQuotaIsolationAndDisabledAdmission(t *testing.T) {
 	}
 }
 
+func TestRelayStatusRequiresCurrentRecipientPermission(t *testing.T) {
+	f := setupRelay(t)
+	id := f.redeem(t, f.b, f.approval, f.grant, 200)
+	body := f.call(t, f.b, id, "status", map[string]any{}, 200)
+	var status sharedCaptureStatus
+	if err := json.Unmarshal(body, &status); err != nil || status.Complete || status.Ending != "unknown" {
+		t.Fatal("empty shared capture reported complete", err)
+	}
+	f.call(t, f.c, id, "status", map[string]any{}, 403)
+	f.call(t, f.a, id, "status", map[string]any{}, 403)
+	s, body := request(t, f.h.server.URL, "DELETE", "/peer-approvals/"+f.approval.ID, f.b, nil)
+	mustStatus(t, 200, s, body)
+	f.call(t, f.b, id, "status", map[string]any{}, 403)
+}
+
 func TestRelayRecorderQuotaAndMigration(t *testing.T) {
 	f := setupRelay(t)
 	id := f.redeem(t, f.b, f.approval, f.grant, 200)

@@ -5,7 +5,9 @@ import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 
+#if !NEARBY_MEDIA_CHECK
 @main
+#endif
 struct MediaProbe {
     static func main() async throws {
         guard CommandLine.arguments.count == 4 else { fatalError("usage: media-probe API_URL SESSION_JSON OUTPUT_DIRECTORY") }

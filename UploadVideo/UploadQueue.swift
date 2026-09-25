@@ -59,12 +59,14 @@ struct QueuedObject: Codable, Sendable, Identifiable {
 final class UploadQueue: @unchecked Sendable {
     private let lock = NSLock()
     private let root: URL
+    private let budget: MediaStorageBudget?
     private var items: [QueuedObject] = []
     private var bytes = 0
     private var deleted: Set<String> = []
     private var deletionFile: URL { root.appendingPathComponent(".deleted.json") }
     static let limit = 3 * 1024 * 1024 * 1024
-    init(root: URL? = nil) throws {
+    init(root: URL? = nil, budget: MediaStorageBudget? = nil) throws {
+        self.budget = budget
         self.root = try root ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                         appropriateFor: nil, create: true).appendingPathComponent("PendingMedia")
         try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
@@ -88,6 +90,7 @@ final class UploadQueue: @unchecked Sendable {
             items.append(item); bytes += item.size
         }
         items.sort { $0.createdAt < $1.createdAt }
+        try budget?.reconcile(self.root)
     }
     func checkSpace() throws {
         lock.lock(); defer { lock.unlock() }
@@ -108,6 +111,7 @@ final class UploadQueue: @unchecked Sendable {
             throw APIError(status: 409, message: "Recording already ended")
         }
         try checkSpaceLocked(additional: data.count)
+        let reservation = try budget?.reserve(data.count + 8192, area: .owner)
         let item = QueuedObject(id: UUID(), accountId: accountId, captureId: captureId, captureKind: captureKind,
                                 sequence: sequence, kind: kind,
                                 sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
@@ -115,6 +119,7 @@ final class UploadQueue: @unchecked Sendable {
                                 duration: duration.isFinite ? duration : 0, startTime: startTime.isFinite ? max(0, startTime) : 0,
                                 createdAt: Date(), location: location, acknowledged: false)
         let staging = root.appendingPathComponent(".tmp-\(item.id.uuidString)")
+        defer { try? budget?.finish(reservation, paths: [staging, folder(item)]) }
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         do {
             try data.write(to: staging.appendingPathComponent("media"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -154,6 +159,8 @@ final class UploadQueue: @unchecked Sendable {
             return
         }
         var updated = last; updated.terminal = terminal
+        let reservation = try budget?.reserve(8192, area: .owner)
+        defer { try? budget?.finish(reservation, paths: [folder(last)]) }
         try JSONEncoder().encode(updated).write(to: folder(last).appendingPathComponent("item.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         items[index] = updated
     }
@@ -185,6 +192,7 @@ final class UploadQueue: @unchecked Sendable {
         updated.insert("\(accountId)/\(captureId)")
         // Commit intent before touching any originals; restart cannot resume a deleted upload.
         try JSONEncoder().encode(updated).write(to: deletionFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        defer { try? budget?.reconcile(deletionFile) }
         deleted = updated
         let removed = items.filter { $0.accountId == accountId && $0.captureId == captureId }
         items.removeAll { $0.accountId == accountId && $0.captureId == captureId }
@@ -194,6 +202,7 @@ final class UploadQueue: @unchecked Sendable {
     private func discard(_ item: QueuedObject) throws {
         // An interrupted filesystem removal is swept by the existing staging cleanup.
         let staging = root.appendingPathComponent(".tmp-\(item.id.uuidString)")
+        defer { try? budget?.finish(nil, paths: [folder(item), staging]) }
         try FileManager.default.moveItem(at: folder(item), to: staging)
         try FileManager.default.removeItem(at: staging)
     }

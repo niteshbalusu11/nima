@@ -7,6 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A01D842B7B46ED112BD0002C /* NearbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0002D /* NearbyView.swift */; };
+		A01D842B7B46ED112BD0002A /* LivePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0002B /* LivePlayback.swift */; };
+		A01D842B7B46ED112BD00028 /* NearbySharing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00029 /* NearbySharing.swift */; };
+		A01D842B7B46ED112BD00026 /* NearbyTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00027 /* NearbyTransport.swift */; };
+		A01D842B7B46ED112BD00024 /* NearbyTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00025 /* NearbyTransfer.swift */; };
+		A01D842B7B46ED112BD00022 /* NearbyChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00023 /* NearbyChannel.swift */; };
+		A01D842B7B46ED112BD00020 /* RelayUploadWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00021 /* RelayUploadWorker.swift */; };
+		A01D842B7B46ED112BD0001E /* UploadSlots.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0001F /* UploadSlots.swift */; };
+		A01D842B7B46ED112BD0001C /* MediaStorageBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0001D /* MediaStorageBudget.swift */; };
 		A01D842B7B46ED112BD0001A /* OwnerMediaRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD0001B /* OwnerMediaRecords.swift */; };
 		A01D842B7B46ED112BD00018 /* ReceivedMediaStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00019 /* ReceivedMediaStore.swift */; };
 		A01D842B7B46ED112BD00016 /* MediaRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01D842B7B46ED112BD00017 /* MediaRecords.swift */; };
@@ -35,6 +44,15 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A01D842B7B46ED112BD0002D /* NearbyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyView.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD0002B /* LivePlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePlayback.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00029 /* NearbySharing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbySharing.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00027 /* NearbyTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyTransport.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00025 /* NearbyTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyTransfer.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00023 /* NearbyChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyChannel.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD00021 /* RelayUploadWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayUploadWorker.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD0001F /* UploadSlots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadSlots.swift; sourceTree = "<group>"; };
+		A01D842B7B46ED112BD0001D /* MediaStorageBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaStorageBudget.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD0001B /* OwnerMediaRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnerMediaRecords.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD00019 /* ReceivedMediaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedMediaStore.swift; sourceTree = "<group>"; };
 		A01D842B7B46ED112BD00017 /* MediaRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRecords.swift; sourceTree = "<group>"; };
@@ -121,6 +139,15 @@
 				A01D842B7B46ED112BD00008 /* GalleryView.swift */,
 				A01D842B7B46ED112BD00017 /* MediaRecords.swift */,
 				A01D842B7B46ED112BD00019 /* ReceivedMediaStore.swift */,
+				A01D842B7B46ED112BD0001D /* MediaStorageBudget.swift */,
+				A01D842B7B46ED112BD0001F /* UploadSlots.swift */,
+				A01D842B7B46ED112BD00021 /* RelayUploadWorker.swift */,
+				A01D842B7B46ED112BD0002D /* NearbyView.swift */,
+				A01D842B7B46ED112BD0002B /* LivePlayback.swift */,
+				A01D842B7B46ED112BD00029 /* NearbySharing.swift */,
+				A01D842B7B46ED112BD00027 /* NearbyTransport.swift */,
+				A01D842B7B46ED112BD00025 /* NearbyTransfer.swift */,
+				A01D842B7B46ED112BD00023 /* NearbyChannel.swift */,
 				A01D842B7B46ED112BD0001B /* OwnerMediaRecords.swift */,
 				A01D842B7B46ED112BD00012 /* PeerStore.swift */,
 				A01D842B7B46ED112BD0000E /* DeviceIdentity.swift */,
@@ -211,6 +238,15 @@
 			files = (
 				A01D842B7B46ED112BD00016 /* MediaRecords.swift in Sources */,
 				A01D842B7B46ED112BD00018 /* ReceivedMediaStore.swift in Sources */,
+				A01D842B7B46ED112BD0001C /* MediaStorageBudget.swift in Sources */,
+				A01D842B7B46ED112BD0001E /* UploadSlots.swift in Sources */,
+				A01D842B7B46ED112BD00020 /* RelayUploadWorker.swift in Sources */,
+				A01D842B7B46ED112BD0002C /* NearbyView.swift in Sources */,
+				A01D842B7B46ED112BD0002A /* LivePlayback.swift in Sources */,
+				A01D842B7B46ED112BD00028 /* NearbySharing.swift in Sources */,
+				A01D842B7B46ED112BD00026 /* NearbyTransport.swift in Sources */,
+				A01D842B7B46ED112BD00024 /* NearbyTransfer.swift in Sources */,
+				A01D842B7B46ED112BD00022 /* NearbyChannel.swift in Sources */,
 				A01D842B7B46ED112BD0001A /* OwnerMediaRecords.swift in Sources */,
 				A01D842B7B46ED112BD00011 /* PeerStore.swift in Sources */,
 				A01D842B7B46ED112BD0000D /* DeviceIdentity.swift in Sources */,

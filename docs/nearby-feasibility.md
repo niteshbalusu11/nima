@@ -82,4 +82,4 @@ SHA-256 checks deliberately omit `Content-MD5` so MD5 validation cannot disguise
 - Run the storage probe on the actual Tigris configuration. Choose direct checksum-bound uploads only after both providers pass. Otherwise implement the plan's bounded Go verification path before permitting relay writes.
 - Validate the registered-key connection test on physical phones as well as the disposable fixture test. Key generation, enrollment, and cached consent are implemented; imported fixtures are not a shipping dependency.
 
-Device identities, session binding, native directional peer approval, caching, and registered-key loopback TLS are now implemented. Signed media records, durable nearby copies, delegated uploads, multiple recipients, and live viewing follow the dependencies in the engineering plan.
+Device identity, signed media records, durable nearby copies, delegated upload workers, three-recipient transport and live viewing are now implemented and tested together on native loopback/RustFS. The physical-radio and Tigris decisions above remain open. See [pilot setup and evidence](nearby-pilot.md).

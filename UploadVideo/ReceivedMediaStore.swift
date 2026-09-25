@@ -5,7 +5,7 @@ import Darwin
 // Stores received copies separately from the owner's upload queue. No network I/O
 // or caller-supplied path is involved in publishing a durable receipt.
 actor ReceivedMediaStore {
-    struct Receipt: Equatable, Sendable {
+    struct Receipt: Codable, Equatable, Sendable {
         let recorderAccountId: String
         let captureId: String
         let sequence: Int
@@ -40,13 +40,15 @@ actor ReceivedMediaStore {
         let authorization: Authorization
         let folder: URL
         let file: FileHandle
+        let reservation: UUID?
         var written = 0
         var sha = SHA256()
         var md5 = Insecure.MD5()
         var finishing = false
     }
     private let root: URL
-    private let peers: PeerStore
+    private let budget: MediaStorageBudget?
+    let peers: PeerStore
     private let device: RegisteredDevice
     private var loaded = false
     private var healthy = true
@@ -54,12 +56,16 @@ actor ReceivedMediaStore {
     private var grants: [String: Authorization] = [:]
     private var captureBindings: [String: Data] = [:]
     private var endings: [String: MediaRecords.Envelope] = [:]
+    private var cloudObjects: Set<String> = []
+    private var cloudComplete: Set<String> = []
+    private var deleted: Set<String> = []
     private var pending: [UUID: Incoming] = [:]
     private var used = 0
     private let limit = 1024 * 1024 * 1024
     private let controlLimit = 8192
 
-    init(peers: PeerStore, root: URL? = nil) throws {
+    init(peers: PeerStore, root: URL? = nil, budget: MediaStorageBudget? = nil) throws {
+        self.budget = budget
         self.peers = peers; device = peers.device
         let base = try root ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                        appropriateFor: nil, create: true).appendingPathComponent("ReceivedMedia", isDirectory: true)
@@ -77,6 +83,7 @@ actor ReceivedMediaStore {
         }
         let authorization = Authorization(descriptor: descriptor, grant: grant, approval: approval)
         let (capture, permission) = try verify(authorization)
+        guard !deleted.contains(Self.hex(capture.digest)) else { throw APIError(status: 410, message: "Copy removed from this phone") }
         try permission.checkTime(now)
         try capture.checkTime(now)
         let object = try capture.manifest(manifest)
@@ -101,13 +108,14 @@ actor ReceivedMediaStore {
             throw MediaRecords.failure("Receiver is busy")
         }
         try checkSpace(object.size + controlLimit)
+        let reservation = try budget?.reserve(object.size + controlLimit, area: .received)
         let id = UUID(), folder = root.appendingPathComponent(".tmp-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.protectionKey: FileProtectionType.complete])
         do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.protectionKey: FileProtectionType.complete])
             try Data().write(to: folder.appendingPathComponent("media"), options: [.completeFileProtection])
             let file = try FileHandle(forWritingTo: folder.appendingPathComponent("media"))
-            pending[id] = Incoming(metadata: metadata, manifest: object, authorization: authorization, folder: folder, file: file)
-        } catch { try? FileManager.default.removeItem(at: folder); throw error }
+            pending[id] = Incoming(metadata: metadata, manifest: object, authorization: authorization, folder: folder, file: file, reservation: reservation)
+        } catch { try? FileManager.default.removeItem(at: folder); try? budget?.finish(reservation, paths: [folder]); throw error }
         return .writing(id)
     }
     func append(_ data: Data, to id: UUID) throws {
@@ -126,7 +134,7 @@ actor ReceivedMediaStore {
         var published = false
         do {
             let snapshot = await peers.snapshot()
-            guard healthy, pending[id] != nil, snapshot.approvals.contains(item.authorization.approval) else { throw MediaRecords.failure("Sharing approval was removed") }
+            guard healthy, pending[id] != nil, snapshot.approvals.contains(where: { $0.samePermission(as: item.authorization.approval) }) else { throw MediaRecords.failure("Sharing approval was removed") }
             let (capture, grant) = try verify(item.authorization)
             try grant.checkTime(now)
             try checkEnding(item.manifest, capture: capture)
@@ -140,19 +148,25 @@ actor ReceivedMediaStore {
             try FileManager.default.moveItem(at: item.folder, to: root.appendingPathComponent(key))
             published = true
             try syncDirectory(root)
+            try budget?.finish(item.reservation, paths: [item.folder, root.appendingPathComponent(key)])
             let receipt = Receipt(recorderAccountId: capture.descriptor.recorderAccountId, captureId: capture.descriptor.captureId,
                                   sequence: item.manifest.sequence, sha256: item.manifest.sha256, size: item.manifest.size)
             entries[key] = Entry(metadata: item.metadata, manifest: item.manifest, receipt: receipt)
             used += item.manifest.size + metadata.count; pending[id] = nil
             return receipt
         } catch {
-            if published { invalidateStorage() } // Reopen and revalidate a commit whose final sync failed.
-            abort(id); throw error
+            if published {
+                pending[id] = nil
+                try? budget?.finish(item.reservation, paths: [item.folder, root.appendingPathComponent(Self.key(item.manifest.descriptorHash, item.manifest.sequence))])
+                invalidateStorage() // Reopen and revalidate a commit whose final sync failed.
+            } else { abort(id) }
+            throw error
         }
     }
     func abort(_ id: UUID) {
         guard let item = pending.removeValue(forKey: id) else { return }
         try? item.file.close(); try? FileManager.default.removeItem(at: item.folder)
+        try? budget?.finish(item.reservation, paths: [item.folder])
     }
     func stop() { for id in Array(pending.keys) { abort(id) } }
     private func invalidateStorage() { healthy = false; stop() }
@@ -160,6 +174,21 @@ actor ReceivedMediaStore {
     func inventory(captureHash: Data) throws -> [Receipt] {
         try restore()
         return entries.values.filter { $0.manifest.descriptorHash == captureHash }.map(\.receipt).sorted { $0.sequence < $1.sequence }
+    }
+    func authorize(descriptor: MediaRecords.Envelope, grant: MediaRecords.Envelope, sender: RegisteredDevice) async throws -> Data {
+        try restore()
+        let snapshot = await peers.snapshot()
+        try restore()
+        guard let approval = snapshot.approvals.first(where: { $0.sender == sender && $0.recipient == device }) else {
+            throw MediaRecords.failure("Sender is not approved")
+        }
+        let auth = Authorization(descriptor: descriptor, grant: grant, approval: approval)
+        let (capture, permission) = try verify(auth)
+        guard !deleted.contains(Self.hex(capture.digest)) else { throw APIError(status: 410, message: "Copy removed from this phone") }
+        let now = Int64(Date().timeIntervalSince1970)
+        try capture.checkTime(now); try permission.checkTime(now)
+        try saveGrant(auth, id: permission.id)
+        return capture.digest
     }
     func savedObject(captureHash: Data, sequence: Int) throws -> SavedObject? {
         try restore()
@@ -188,6 +217,7 @@ actor ReceivedMediaStore {
         guard let approval = snapshot.approvals.first(where: { $0.sender == sender && $0.recipient == device }) else { throw MediaRecords.failure("Sender is not approved") }
         let auth = Authorization(descriptor: descriptor, grant: grant, approval: approval)
         let (capture, permission) = try verify(auth)
+        guard !deleted.contains(Self.hex(capture.digest)) else { throw APIError(status: 410, message: "Copy removed from this phone") }
         try permission.checkTime(now)
         try capture.checkTime(now)
         let completion = try capture.completion(envelope)
@@ -270,9 +300,16 @@ actor ReceivedMediaStore {
         do {
             var captures: [String: MediaRecords.Capture] = [:]
             for url in files where url.lastPathComponent.hasPrefix(".tmp-") { try FileManager.default.removeItem(at: url) }
+            for url in files where url.lastPathComponent.hasPrefix("deleted-") {
+                let data = try control(url), hash = try JSONDecoder().decode(Data.self, from: data)
+                guard hash.count == 32, url.lastPathComponent == "deleted-" + Self.hex(hash) + ".json" else { throw MediaRecords.failure("Invalid local deletion") }
+                deleted.insert(Self.hex(hash))
+                used += data.count
+            }
             for url in files where url.lastPathComponent.hasPrefix("grant-") {
                 let data = try control(url), auth = try JSONDecoder().decode(Authorization.self, from: data)
                 let (capture, grant) = try verify(auth)
+                if deleted.contains(Self.hex(capture.digest)) { try FileManager.default.removeItem(at: url); continue }
                 try checkBinding(capture)
                 guard url.lastPathComponent == "grant-" + grant.id + ".json", grants.count < 4096 else { throw MediaRecords.failure("Invalid saved permission") }
                 grants[grant.id] = auth; used += data.count
@@ -282,13 +319,15 @@ actor ReceivedMediaStore {
             for url in files where url.lastPathComponent.hasPrefix("end-") {
                 let data = try control(url), envelope = try JSONDecoder().decode(MediaRecords.Envelope.self, from: data)
                 let key = String(url.lastPathComponent.dropFirst(4).dropLast(5))
+                if deleted.contains(key) { try FileManager.default.removeItem(at: url); continue }
                 guard let capture = captures[key], url.lastPathComponent == "end-" + key + ".json" else {
                     throw MediaRecords.failure("Completion has no saved permission")
                 }
                 _ = try capture.completion(envelope)
                 endings[Self.hex(capture.digest)] = envelope; used += data.count
             }
-            for folder in files where !folder.lastPathComponent.hasPrefix(".tmp-") && !folder.lastPathComponent.hasPrefix("grant-") && !folder.lastPathComponent.hasPrefix("end-") {
+            for folder in files where !folder.lastPathComponent.hasPrefix(".tmp-") && !folder.lastPathComponent.hasPrefix("grant-") && !folder.lastPathComponent.hasPrefix("end-") && !folder.lastPathComponent.hasPrefix("deleted-") {
+                if deleted.contains(String(folder.lastPathComponent.prefix(64))) { try FileManager.default.removeItem(at: folder); continue }
                 let data = try control(folder.appendingPathComponent("record.json")), metadata = try JSONDecoder().decode(Metadata.self, from: data)
                 let capture = try MediaRecords.Capture(metadata.descriptor, recorder: metadata.recorder), object = try capture.manifest(metadata.manifest)
                 guard folder.lastPathComponent == Self.key(capture.digest, object.sequence), entries.count < 100_000,
@@ -299,9 +338,16 @@ actor ReceivedMediaStore {
                                       sequence: object.sequence, sha256: object.sha256, size: object.size)
                 entries[folder.lastPathComponent] = Entry(metadata: metadata, manifest: object, receipt: receipt)
                 used += object.size + data.count
+                let cloud = folder.appendingPathComponent("cloud.json")
+                if FileManager.default.fileExists(atPath: cloud.path) {
+                    let marker = try control(cloud)
+                    guard try JSONDecoder().decode(Data.self, from: marker) == metadata.manifest.digest else { throw MediaRecords.failure("Invalid cloud acknowledgement") }
+                    cloudObjects.insert(folder.lastPathComponent); used += marker.count
+                }
             }
             guard used <= limit else { throw MediaRecords.failure("Received media exceeds storage limit") }
             loaded = true
+            try budget?.reconcile(root)
         } catch { healthy = false; throw error }
     }
     private func checkSpace(_ additional: Int) throws {
@@ -309,7 +355,7 @@ actor ReceivedMediaStore {
         let reserved = pending.values.reduce(0) { $0 + $1.manifest.size + controlLimit }
         let free = try root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage ?? 0
         guard used + reserved + additional <= limit, free >= Int64(additional + reserved + 100 * 1024 * 1024) else {
-            throw MediaRecords.failure("Received media storage is full")
+            throw APIError(status: 413, message: "Received media storage is full")
         }
     }
     private func control(_ url: URL) throws -> Data {
@@ -321,6 +367,10 @@ actor ReceivedMediaStore {
     private func writeControl(_ data: Data, to url: URL) throws {
         guard data.count <= controlLimit else { throw MediaRecords.failure("Signed metadata is too large") }
         let temporary = url.deletingLastPathComponent().appendingPathComponent(".tmp-" + UUID().uuidString)
+        // Object metadata is already covered by its full in-flight reservation.
+        let objectMetadata = url.lastPathComponent == "record.json"
+        let reservation = objectMetadata ? nil : try budget?.reserve(data.count, area: .received)
+        defer { if !objectMetadata { try? budget?.finish(reservation, paths: [temporary, url]) } }
         defer { try? FileManager.default.removeItem(at: temporary) }
         try data.write(to: temporary, options: [.completeFileProtection])
         let file = try FileHandle(forWritingTo: temporary)
@@ -346,4 +396,123 @@ actor ReceivedMediaStore {
     }
     private static func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
     private static func key(_ hash: Data, _ sequence: Int) -> String { hex(hash) + "-" + String(sequence) }
+}
+
+extension ReceivedMediaStore {
+    struct Playback: Sendable {
+        let manifests: [MediaRecords.Manifest]
+        let ended: Bool
+    }
+    func playback(captureHash: Data) throws -> Playback {
+        try restore()
+        guard !deleted.contains(Self.hex(captureHash)) else { throw CancellationError() }
+        let objects = entries.values.filter { $0.manifest.descriptorHash == captureHash }.map(\.manifest).sorted { $0.sequence < $1.sequence }
+        let prefix = objects.enumerated().prefix { $0.offset == $0.element.sequence }.map(\.element)
+        return Playback(manifests: prefix, ended: try completed(captureHash: captureHash) != nil)
+    }
+    struct CaptureInfo: Identifiable, Equatable, Sendable {
+        let id: String
+        let hash: Data
+        let recorderName: String
+        let local: LocalCapture
+        let savedObjects: Int
+        let cloudObjects: Int
+        let expectedObjects: Int?
+        let complete: Bool
+        let cloudComplete: Bool
+        let ending: String
+    }
+    struct RelayMaterial: Sendable {
+        let descriptor: MediaRecords.Envelope
+        let grant: MediaRecords.Envelope
+        let permission: MediaRecords.Grant
+        let object: SavedObject?
+        let sequence: Int?
+        let completion: MediaRecords.Envelope?
+    }
+    func captures() throws -> [CaptureInfo] {
+        try restore()
+        return try Dictionary(grouping: entries.values.filter { !deleted.contains(Self.hex($0.manifest.descriptorHash)) }, by: { Self.hex($0.manifest.descriptorHash) }).map { hash, items in
+            let sorted = items.sorted { $0.manifest.sequence < $1.manifest.sequence }
+            let first = sorted[0], capture = try MediaRecords.Capture(first.metadata.descriptor, recorder: first.metadata.recorder)
+            let prefix = sorted.enumerated().prefix { $0.offset == $0.element.manifest.sequence }.map(\.element)
+            let ending = try endings[hash].map { try capture.completion($0) }
+            let complete = try completed(captureHash: capture.digest) != nil
+            let cloudCount = sorted.filter { cloudObjects.contains(Self.key(capture.digest, $0.manifest.sequence)) }.count
+            let name = grants.values.first { $0.approval.sender == capture.recorder }?.approval.senderName ?? ""
+            let local = LocalCapture(id: capture.descriptor.captureId, accountId: capture.recorder.accountId,
+                kind: capture.descriptor.kind == .photo ? "photo" : "video", createdAt: Date(timeIntervalSince1970: Double(capture.descriptor.createdAt)),
+                duration: prefix.reduce(0) { $0 + $1.manifest.duration }, uploaded: cloudComplete.contains(hash),
+                playable: capture.descriptor.kind == .photo ? !prefix.isEmpty : prefix.count > 1,
+                parts: prefix.map { root.appendingPathComponent(Self.key(capture.digest, $0.manifest.sequence)).appendingPathComponent("media") })
+            return CaptureInfo(id: hash, hash: capture.digest, recorderName: name.isEmpty ? "Nearby recorder" : name,
+                local: local, savedObjects: items.count, cloudObjects: cloudCount, expectedObjects: ending?.objectCount,
+                complete: complete, cloudComplete: cloudComplete.contains(hash), ending: ending.map { $0.ending == .stopped ? "stopped" : "interrupted" } ?? "unknown")
+        }.sorted { $0.local.createdAt > $1.local.createdAt }
+    }
+    func relayMaterial(captureHash: Data) async throws -> RelayMaterial? {
+        let active = try await relayGrants(captureHash: captureHash)
+        guard let envelope = active.first, let auth = grants.values.first(where: { $0.grant == envelope }) else { return nil }
+        let (capture, permission) = try verify(auth)
+        guard !deleted.contains(Self.hex(captureHash)) else { return nil }
+        let entry = entries.values.filter { $0.manifest.descriptorHash == captureHash && !cloudObjects.contains(Self.key(captureHash, $0.manifest.sequence)) }
+            .min { $0.manifest.sequence < $1.manifest.sequence }
+        let object = try entry.flatMap { try savedObject(captureHash: captureHash, sequence: $0.manifest.sequence) }
+        return RelayMaterial(descriptor: capture.envelope, grant: envelope, permission: permission, object: object,
+            sequence: entry?.manifest.sequence, completion: endings[Self.hex(captureHash)])
+    }
+    func markCloudObject(captureHash: Data, sequence: Int) throws {
+        try restore()
+        let key = Self.key(captureHash, sequence)
+        guard let entry = entries[key], !deleted.contains(Self.hex(captureHash)) else { throw CancellationError() }
+        if cloudObjects.contains(key) { return }
+        let folder = root.appendingPathComponent(key)
+        let data = try JSONEncoder().encode(entry.metadata.manifest.digest)
+        try checkSpace(data.count)
+        do { try writeControl(data, to: folder.appendingPathComponent("cloud.json")); try syncDirectory(folder) }
+        catch { invalidateStorage(); throw error }
+        cloudObjects.insert(key); used += data.count
+    }
+    func markCloudComplete(captureHash: Data, complete: Bool) {
+        let key = Self.hex(captureHash)
+        if complete && !deleted.contains(key) { cloudComplete.insert(key) } else { cloudComplete.remove(key) }
+    }
+    func completion(captureHash: Data) throws -> MediaRecords.Envelope? { try restore(); return endings[Self.hex(captureHash)] }
+    func remove(captureHash: Data) throws {
+        try restore()
+        var succeeded = false
+        defer { if !succeeded { invalidateStorage() } }
+        guard captureHash.count == 32 else { throw MediaRecords.failure("Invalid capture") }
+        let hash = Self.hex(captureHash)
+        if !deleted.contains(hash) {
+            let tombstone = root.appendingPathComponent("deleted-" + hash + ".json")
+            try writeControl(JSONEncoder().encode(captureHash), to: tombstone); try syncDirectory(root)
+            deleted.insert(hash)
+        }
+        for (id, item) in pending where item.manifest.descriptorHash == captureHash { abort(id) }
+        // The durable local tombstone also lets reopen finish any interrupted deletion.
+        for (id, auth) in grants where (try auth.descriptor.digest) == captureHash {
+            let url = root.appendingPathComponent("grant-" + id + ".json")
+            try FileManager.default.removeItem(at: url); grants[id] = nil
+        }
+        let end = root.appendingPathComponent("end-" + hash + ".json")
+        if FileManager.default.fileExists(atPath: end.path) { try FileManager.default.removeItem(at: end) }
+        for (key, entry) in entries where entry.manifest.descriptorHash == captureHash {
+            try FileManager.default.removeItem(at: root.appendingPathComponent(key)); entries[key] = nil; cloudObjects.remove(key)
+        }
+        endings[hash] = nil; cloudComplete.remove(hash)
+        try syncDirectory(root)
+        // Rebuild counters from the remaining committed metadata, without hashing media again.
+        used = 0
+        for (key, entry) in entries {
+            let folder = root.appendingPathComponent(key)
+            used += entry.manifest.size + (try control(folder.appendingPathComponent("record.json"))).count
+            if cloudObjects.contains(key) { used += (try control(folder.appendingPathComponent("cloud.json"))).count }
+        }
+        for id in grants.keys { used += (try control(root.appendingPathComponent("grant-" + id + ".json"))).count }
+        for id in endings.keys { used += (try control(root.appendingPathComponent("end-" + id + ".json"))).count }
+        for id in deleted { used += (try control(root.appendingPathComponent("deleted-" + id + ".json"))).count }
+        try budget?.reconcile(root)
+        succeeded = true
+    }
 }

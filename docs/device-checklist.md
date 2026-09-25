@@ -7,7 +7,7 @@ Verification on September 24, 2026:
 - Real app Swift encoder/queue/uploader on macOS: 720×1280 H.264 + AAC at 30 fps, deliberate raw-frame gap, concurrent JPEG, remote download **before Stop**, clean FFmpeg decoding, durable queue acknowledgments.
 - Signed simulator: enrollment through the local API, Keychain session survives relaunch, optional profile edits persist.
 - Sessions: no automatic expiry or expiry field in the app/API/database. Enrollment, saved-session restoration, account isolation, and the live-media flow pass the updated tests.
-- Builds: Debug for the connected iPhone 17 and unsigned Release for physical iOS both compile. Release has no HTTP transport exception.
+- Builds: Debug for the connected iPhone 17 and unsigned Release for physical iOS both compile. The nearby branch limits its Release HTTP exception to the receiver-local player at 127.0.0.1; API/storage remain HTTPS.
 - Queue: reconstruction after offline capture, account isolation, initialization-before-media ordering, saved originals retained.
 - Photos: synthetic JPEG and completed H.264/AAC video imported through the app's actual PhotoKit saver in the simulator. Denied add-only access leaves the queue intact. MP4 export preserves portrait dimensions, audio, and seven-second duration despite a dropped-frame gap; queue tests reject missing fragments and another account's capture.
 
@@ -28,3 +28,7 @@ These checks do not replace physical iPhone validation. Before handing out the a
 11. On the iPhone 17, confirm new photos are larger than 640×480 and do not exceed the 12 MiB upload-object limit. Confirm new videos are 720×1280 and near 30 fps in good light. Tap near and far subjects and check that focus/exposure change in the preview and recorded video. Repeat a photo during recording, then check live fragment arrival, frame drops, heat, and retained storage after 30 minutes on Wi-Fi and cellular.
 
 Do not label the pilot ready until physical-device live video/photo upload, retrieval without the source phone, and private Tigris access have passed.
+
+## Nearby branch
+
+Use [the nearby pilot guide](nearby-pilot.md) for the new build/server prerequisites and offline two-phone procedure. Native three-recipient TLS, live HLS playback and delegated RustFS recovery pass automated tests. They do not replace the radio, iOS version, throughput, thermal or Tigris gates.

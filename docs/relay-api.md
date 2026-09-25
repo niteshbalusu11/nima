@@ -14,6 +14,7 @@ Every envelope uses [signed media v1](signed-media-protocol.md). All relay calls
 | `/relay-grants/{id}/objects/reserve` | `manifest` | `acknowledged: true`, or `acknowledged: false`, `url`, `headers` |
 | `/relay-grants/{id}/objects/ack` | `sequence` | `ok: true` after storage verification |
 | `/relay-grants/{id}/completion` | `completion` | `ok: true` after accepting signed terminal evidence |
+| `/relay-grants/{id}/status` | `{}` | `recording_ending`, `cloud_complete`, after current recipient authorization; no media URLs |
 | `/captures/{id}/completion` | `completion` | Owner-only forwarding of the original recorder's signed evidence |
 
 Redemption resolves the active approval from the server, verifies the recorder's registered signature and recipient binding, and checks the 30-day lifetime, clock skew, destination, and allowance. It creates a missing capture under the recorder, or binds the same descriptor to an existing capture with matching owner/kind. A grant ID is immutable by signed payload; a fresh valid ECDSA signature over the same payload preserves the first stored envelope. A deleted capture cannot be recreated, including when deletion preceded any upload.
@@ -38,4 +39,4 @@ Terminal evidence may arrive before some fragments. It cannot exclude an existin
 
 `./tools/verify-local.sh` additionally runs the actual relay endpoints against RustFS: corrupt bytes fail before final-key occupancy, then A/B/C race to upload the same signed object, exactly one conditional write wins, and both recipients acknowledge and skip the verified duplicate. The existing real encoder/live-upload test still passes. `./tools/verify-relay-storage.sh` uses the same relay presigner for isolated SHA-256 and conditional-write checks.
 
-The native recipient upload scheduler, shared upload slots, nearby media framing/delivery, combined local storage accounting, and user-facing recovery/playback are still pending. The backend is testable but the complete nearby feature is not enabled in the app.
+The native scheduler, shared upload slots, authenticated nearby media transport, combined storage accounting and receive/playback UI are now implemented. `./tools/verify-nearby-media.sh` exercises the actual Swift encoder, three TLS recipients, native relay workers and RustFS together, including complementary partial recordings. See [the two-phone pilot guide](nearby-pilot.md) for installation, evidence and the remaining physical-radio/Tigris gates.

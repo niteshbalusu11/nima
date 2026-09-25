@@ -1,4 +1,3 @@
-#if DEBUG
 import SwiftUI
 
 struct NearbySettingsView: View {
@@ -67,7 +66,7 @@ struct NearbySettingsView: View {
                 if busy { ProgressView().accessibilityLabel("Updating nearby setup") }
                 if let message { Text(message) }
             } footer: {
-                Text("Development setup. Media sharing is not enabled yet.")
+                Text("Set up people while online. Approved phones can share nearby without internet.")
             }
         }
         .navigationTitle("Nearby setup")
@@ -98,9 +97,13 @@ struct NearbySettingsView: View {
             if approvals.isEmpty { Text("No one yet").foregroundStyle(.secondary) }
             ForEach(approvals) { approval in
                 HStack {
+                    #if DEBUG
                     NavigationLink(name(outgoing ? approval.recipientName : approval.senderName)) {
                         ApprovedProbeView(model: model, store: store, approval: approval)
                     }.lineLimit(1)
+                    #else
+                    Text(name(outgoing ? approval.recipientName : approval.senderName)).lineLimit(1)
+                    #endif
                     Spacer()
                     Button("Remove", role: .destructive) {
                         // Local revocation must remain available during an in-flight refresh.
@@ -139,6 +142,7 @@ struct NearbySettingsView: View {
     }
 }
 
+#if DEBUG
 private struct ApprovedProbeView: View {
     @ObservedObject var model: AppModel
     let store: PeerStore
