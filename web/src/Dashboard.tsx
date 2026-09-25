@@ -43,6 +43,8 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [captures, setCaptures] = useState<Capture[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [sourceCapture, setSourceCapture] = useState<Capture | null>(null)
+  const sourceCaptureRef = useRef<Capture | null>(null)
   const [photos, setPhotos] = useState<Record<string, string>>({})
   const [now, setNow] = useState(Date.now())
   const activity = useRef(new Map<string, { count: number; changed: number }>())
@@ -91,7 +93,7 @@ export default function Dashboard() {
         }
         setNow(current)
         setCaptures(feed.captures)
-        setSelectedId(previous => previous && feed.captures.some(capture => capture.id === previous)
+        setSelectedId(previous => previous && (feed.captures.some(capture => capture.id === previous) || sourceCaptureRef.current?.id === previous)
           ? previous : feed.captures[0]?.id ?? null)
         setError(null)
       } catch (reason) {
@@ -175,7 +177,19 @@ export default function Dashboard() {
     setSession(null)
     setCaptures([])
     setPhotos({})
+    setSourceCapture(null)
+    sourceCaptureRef.current = null
     activity.current.clear()
+  }
+
+  async function selectSourceCapture(id: string) {
+    try {
+      const capture = await api<Capture>('GET', `/super-admin/captures/${id}/summary`, session!.token)
+      sourceCaptureRef.current = capture
+      setSourceCapture(capture)
+      setSelectedId(capture.id)
+      setError(null)
+    } catch { setError('Source capture unavailable') }
   }
 
   if (!session) return <main className="dash-login">
@@ -191,7 +205,8 @@ export default function Dashboard() {
     </form>
   </main>
 
-  const selected = captures.find(capture => capture.id === selectedId)
+  const selected = captures.find(capture => capture.id === selectedId) ??
+    (sourceCapture?.id === selectedId ? sourceCapture : undefined)
   const selectedActivity = selected && activity.current.get(selected.id)
   const receiving = Boolean(selected && selected.kind === 'video' && !selected.finished &&
     selected.acknowledged_objects > 0 && selectedActivity && now - selectedActivity.changed < 8000)
@@ -220,7 +235,8 @@ export default function Dashboard() {
             : <div className="dash-empty"><span className="dash-empty-ring" /><p>Waiting for photo upload</p></div>)}
         </div>
         {selected && <div className="dash-stage-meta"><span>CAPTURE ID&nbsp; {selected.id.slice(0, 8)}</span><span>{selected.kind === 'video' ? `${Math.max(0, selected.acknowledged_objects - 1)} video fragments uploaded` : 'Photo'}</span><span className="dash-shortcuts">↑ ↓ captures{selected.kind === 'video' ? ' · Space play/pause' : ''}</span></div>}
-        {selected && <FaceGallery key={selected.id} captureId={selected.id} token={session.token} video={selected.kind === 'video'} />}
+        {selected && <FaceGallery key={selected.id} captureId={selected.id} token={session.token}
+          video={selected.kind === 'video'} onSelectCapture={id => { void selectSourceCapture(id) }} />}
       </section>
       <aside className="dash-feed" aria-label="Recent captures">
         <div className="dash-feed-head"><div><span className="dash-eyebrow">ACTIVITY</span><h2>Recent captures</h2></div><span>{captures.length}</span></div>

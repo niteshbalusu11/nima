@@ -132,8 +132,14 @@ func (a *api) handler() http.Handler {
 	protected.HandleFunc("DELETE /captures/{id}", a.deleteCapture)
 	protected.HandleFunc("GET /super-admin/captures", a.listSuperAdminCaptures)
 	protected.HandleFunc("GET /super-admin/captures/{id}", a.getSuperAdminCapture)
+	protected.HandleFunc("GET /super-admin/captures/{id}/summary", a.getSuperAdminCaptureSummary)
 	protected.HandleFunc("GET /super-admin/captures/{id}/faces", a.listFaces)
 	protected.HandleFunc("GET /super-admin/captures/{id}/faces/{face}", a.faceImage)
+	protected.HandleFunc("PUT /super-admin/captures/{id}/face-research", a.optInFaceResearch)
+	protected.HandleFunc("DELETE /super-admin/captures/{id}/face-research", a.optOutFaceResearch)
+	protected.HandleFunc("POST /super-admin/face-people", a.enrollFacePerson)
+	protected.HandleFunc("GET /super-admin/face-people", a.listFacePeople)
+	protected.HandleFunc("DELETE /super-admin/face-people/{id}", a.removeFacePerson)
 	mux.Handle("/", a.auth(protected))
 	return mux
 }
@@ -592,6 +598,35 @@ func (a *api) getSuperAdminCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.captureDetail(w, r, kind, true)
+}
+
+func (a *api) getSuperAdminCaptureSummary(w http.ResponseWriter, r *http.Request) {
+	if !a.requireSuperAdmin(w, r) {
+		return
+	}
+	var capture struct {
+		ID                  string `json:"id"`
+		AccountID           string `json:"account_id"`
+		AccountName         string `json:"account_name"`
+		Kind                string `json:"kind"`
+		CreatedAt           int64  `json:"created_at"`
+		Finished            bool   `json:"finished"`
+		AcknowledgedObjects int    `json:"acknowledged_objects"`
+	}
+	err := a.db.QueryRowContext(r.Context(), `SELECT c.id,c.account_id,COALESCE(NULLIF(a.name,''),'Camera '||substr(c.account_id,1,8)),
+		c.kind,c.created_at,c.finished,
+		(SELECT COUNT(*) FROM objects o WHERE o.capture_id=c.id AND o.acknowledged=1)
+		FROM captures c JOIN accounts a ON a.id=c.account_id WHERE c.id=? AND c.deleted_at IS NULL`, r.PathValue("id")).
+		Scan(&capture.ID, &capture.AccountID, &capture.AccountName, &capture.Kind, &capture.CreatedAt, &capture.Finished, &capture.AcknowledgedObjects)
+	if err == sql.ErrNoRows {
+		failure(w, 404, "Not found")
+		return
+	}
+	if err != nil {
+		failure(w, 503, "Unavailable")
+		return
+	}
+	jsonResponse(w, 200, capture)
 }
 
 func (a *api) getCapture(w http.ResponseWriter, r *http.Request) {
